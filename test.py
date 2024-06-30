@@ -53,9 +53,6 @@ def extract_lines_from_pdf(pdf_path):
 
     return lines
 
-    
-    return lines
-
 def update_canvas(page_image):
     photo = ImageTk.PhotoImage(page_image)
     canvas.create_image(0, 0, anchor=tk.NW, image=photo)
@@ -77,7 +74,7 @@ def update_gaze_tracking():
                 update_line_access(pdf_coordinates)
             else:
                 print("No gaze point detected on screen.")  # Debugging print statement
-        time.sleep(0.1)  # Sleep for a second before the next update
+        time.sleep(0.05)  # Reduced sleep time for more frequent updates
 
 def capture_webcam_frames():
     global frame
@@ -118,8 +115,6 @@ def update_line_access(pdf_coordinates):
                 print("Hard to understand lines:", hard_lines)  # Debugging print statement
             break
 
-
-
 def display_reading_times():
     reading_window = tk.Toplevel(root)
     reading_window.title("Reading Times")
@@ -131,7 +126,6 @@ def display_reading_times():
         text.insert(tk.END, f"Line {line_num}: {time_spent:.2f} seconds\n")
 
     text.config(state=tk.DISABLED)
-
 
 def open_pdf():
     file_path = "The Setting Sun 6.pdf"  # Replace with your PDF file path
@@ -181,7 +175,6 @@ def stop_tracking(event=None):
     tracking = False
     write_final_reading_data()  # Write final reading data to file
     root.destroy()
-
 
 def start_capture_thread():
     global capture_thread
