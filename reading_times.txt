@@ -446,3 +446,182 @@ education has brought with it a profound respect for Western culture,
 and sometimes
 a genuine love.
  - Time spent: 48.47 seconds
+Line 0: 'where students gather to listen to records of Beethoven' - Time spent: 37.49 seconds
+Line 0: 'where students gather to listen to records of Beethoven' - Time spent: 23.30 seconds
+Line 0: 'where students gather to listen to records of Beethoven' - Time spent: 25.07 seconds
+Line 0: 'where students gather to listen to records of Beethoven' - Time spent: 26.73 seconds
+Line 20: 'has led to many of the changes so deplored by' - Time spent: 17.23 seconds
+Line 27: 'accepted  (at  least  in  Tokyo)  as  the  alternative  a  woman  has  to  an' - Time spent: 12.65 seconds
+Line 24: 'undergoing  similar  change.  The  family  system  is  breaking  up,' - Time spent: 5.75 seconds
+Line 24: 'undergoing  similar  change.  The  family  system  is  breaking  up,' - Time spent: 7.91 seconds
+Line 25: 'especially  in  the  larger  cities,  and  the  traditional  values  associated' - Time spent: 2.09 seconds
+Line 25: 'especially  in  the  larger  cities,  and  the  traditional  values  associated' - Time spent: 3.17 seconds
+Line 25: 'especially  in  the  larger  cities,  and  the  traditional  values  associated' - Time spent: 4.24 seconds
+Line 26: 'with  the  family  are  losing  ground.  Divorce,  for  example,  is  now' - Time spent: 1.06 seconds
+Line 26: 'with  the  family  are  losing  ground.  Divorce,  for  example,  is  now' - Time spent: 2.11 seconds
+Line 27: 'accepted  (at  least  in  Tokyo)  as  the  alternative  a  woman  has  to  an' - Time spent: 13.71 seconds
+Line 27: 'accepted  (at  least  in  Tokyo)  as  the  alternative  a  woman  has  to  an' - Time spent: 14.77 seconds
+Line 27: 'accepted  (at  least  in  Tokyo)  as  the  alternative  a  woman  has  to  an' - Time spent: 25.27 seconds
+Line 27: 'accepted  (at  least  in  Tokyo)  as  the  alternative  a  woman  has  to  an' - Time spent: 26.33 seconds
+Line 26: 'with  the  family  are  losing  ground.  Divorce,  for  example,  is  now' - Time spent: 5.31 seconds
+Line 25: 'especially  in  the  larger  cities,  and  the  traditional  values  associated' - Time spent: 3.17 seconds
+Line 24: 'undergoing  similar  change.  The  family  system  is  breaking  up,' - Time spent: 2.12 seconds
+Line 21: 'The face of Japan is changing every day as taste, convenience,' - Time spent: 4.25 seconds
+Line 4: 'modern Western literature and art penetrates, whether the farmer in' - Time spent: 10.66 seconds
+Line 5: 'his village has any better understanding of Goethe or Manet than his' - Time spent: 0.59 seconds
+Line 3: 'Gogh,  or  Matisse.  It  may  be  debated  how  deeply  this  interest  in' - Time spent: 2.24 seconds
+Line 4: 'modern Western literature and art penetrates, whether the farmer in' - Time spent: 11.21 seconds
+Line 12: 'has  led  to  many  of  the  changes  so  deplored  by  the  foreign  visitor.' - Time spent: 1.12 seconds
+Line 13: 'The Japanese woman who abandons the traditional kimono in favor' - Time spent: 0.55 seconds
+Line 13: 'The Japanese woman who abandons the traditional kimono in favor' - Time spent: 1.66 seconds
+Line 14: 'of  a  dress  is  not  merely  imitating  some  Hollywood  star;  she  is' - Time spent: 0.56 seconds
+Line 14: 'of  a  dress  is  not  merely  imitating  some  Hollywood  star;  she  is' - Time spent: 1.12 seconds
+Line 13: 'The Japanese woman who abandons the traditional kimono in favor' - Time spent: 2.23 seconds
+Line 13: 'The Japanese woman who abandons the traditional kimono in favor' - Time spent: 2.80 seconds
+Line 12: 'has  led  to  many  of  the  changes  so  deplored  by  the  foreign  visitor.' - Time spent: 1.68 seconds
+Line 12: 'has  led  to  many  of  the  changes  so  deplored  by  the  foreign  visitor.' - Time spent: 2.25 seconds
+Line 9: 'This  feeling  has  often  been  indiscriminate  and  led  to  a' - Time spent: 1.12 seconds
+Line 6: 'grandfather  did.  The  fact  remains  that  almost  everywhere  in  Japan' - Time spent: 0.56 seconds
+Line 9: 'This  feeling  has  often  been  indiscriminate  and  led  to  a' - Time spent: 1.68 seconds
+Line 9: 'This  feeling  has  often  been  indiscriminate  and  led  to  a' - Time spent: 19.94 seconds
+Line 19: 'day, the cost of the expensive silks makes the traditional costume a' - Time spent: 0.57 seconds
+Line 16: 'and  underrobes,  unbearably  hot  in  summer  and  impractical  at  any' - Time spent: 2.78 seconds
+Line 16: 'and  underrobes,  unbearably  hot  in  summer  and  impractical  at  any' - Time spent: 3.34 seconds
+Line 16: 'and  underrobes,  unbearably  hot  in  summer  and  impractical  at  any' - Time spent: 3.90 seconds
+Line 16: 'and  underrobes,  unbearably  hot  in  summer  and  impractical  at  any' - Time spent: 5.02 seconds
+Line 16: 'and  underrobes,  unbearably  hot  in  summer  and  impractical  at  any' - Time spent: 5.56 seconds
+Line 16: 'and  underrobes,  unbearably  hot  in  summer  and  impractical  at  any' - Time spent: 6.12 seconds
+Line 16: 'and  underrobes,  unbearably  hot  in  summer  and  impractical  at  any' - Time spent: 6.68 seconds
+Line 16: 'and  underrobes,  unbearably  hot  in  summer  and  impractical  at  any' - Time spent: 7.80 seconds
+Line 16: 'and  underrobes,  unbearably  hot  in  summer  and  impractical  at  any' - Time spent: 8.36 seconds
+Line 16: 'and  underrobes,  unbearably  hot  in  summer  and  impractical  at  any' - Time spent: 8.93 seconds
+Line 16: 'and  underrobes,  unbearably  hot  in  summer  and  impractical  at  any' - Time spent: 9.48 seconds
+Line 12: 'has  led  to  many  of  the  changes  so  deplored  by  the  foreign  visitor.' - Time spent: 8.27 seconds
+Line 12: 'has  led  to  many  of  the  changes  so  deplored  by  the  foreign  visitor.' - Time spent: 8.44 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 0.71 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 1.21 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 1.39 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 1.55 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 1.72 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 1.89 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 2.08 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 2.25 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 2.42 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 2.59 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 2.76 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 2.93 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 3.09 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 3.28 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 3.47 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 3.64 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 3.81 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 4.01 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 4.17 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 4.34 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 4.51 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 4.68 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 4.84 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 5.01 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 5.18 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 5.36 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 5.52 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 5.71 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 5.88 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 6.04 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 6.21 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 6.38 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 6.56 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 6.72 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 6.89 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 7.06 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 7.23 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 7.40 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 7.57 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 7.74 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 7.90 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 8.07 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 8.25 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 8.42 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 8.58 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 8.75 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 8.92 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 9.09 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 9.26 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 9.44 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 9.61 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 9.78 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 9.95 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 10.12 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 10.28 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 10.45 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 10.62 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 10.79 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 10.96 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 11.12 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 11.30 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 11.47 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 11.64 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 11.80 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 11.97 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 12.15 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 12.31 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 12.49 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 12.65 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 12.82 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 12.99 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 13.17 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 13.35 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 13.53 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 13.69 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 13.87 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 14.05 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 14.21 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 14.39 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 14.56 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 14.72 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 14.90 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 15.09 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 15.26 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 15.43 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 15.61 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 15.78 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 15.95 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 16.12 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 16.29 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 16.47 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 16.64 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 16.81 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 16.98 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 17.14 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 17.31 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 17.48 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 17.64 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 17.81 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 17.97 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 18.14 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 18.31 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 18.47 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 18.65 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 18.82 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 18.99 seconds
+Line 11: 'unpardonable, but it has not been only adulation for the West which' - Time spent: 19.16 seconds
+Line 24: 'undergoing  similar  change.  The  family  system  is  breaking  up,' - Time spent: 16.33 seconds
+Line 24: 'undergoing  similar  change.  The  family  system  is  breaking  up,' - Time spent: 16.48 seconds
+Line 23: 'undeniably slower pace, the moral and spiritual life of the country is' - Time spent: 0.15 seconds
+Line 23: 'undeniably slower pace, the moral and spiritual life of the country is' - Time spent: 0.31 seconds
+Line 23: 'undeniably slower pace, the moral and spiritual life of the country is' - Time spent: 0.61 seconds
+Line 23: 'undeniably slower pace, the moral and spiritual life of the country is' - Time spent: 0.78 seconds
+Line 23: 'undeniably slower pace, the moral and spiritual life of the country is' - Time spent: 0.93 seconds
+Line 23: 'undeniably slower pace, the moral and spiritual life of the country is' - Time spent: 1.26 seconds
+Line 23: 'undeniably slower pace, the moral and spiritual life of the country is' - Time spent: 1.40 seconds
+Line 23: 'undeniably slower pace, the moral and spiritual life of the country is' - Time spent: 1.56 seconds
+Line 21: 'The face of Japan is changing every day as taste, convenience,' - Time spent: 0.16 seconds
+Line 21: 'The face of Japan is changing every day as taste, convenience,' - Time spent: 0.46 seconds
+Line 21: 'The face of Japan is changing every day as taste, convenience,' - Time spent: 0.61 seconds
+Line 21: 'The face of Japan is changing every day as taste, convenience,' - Time spent: 0.76 seconds
+Line 21: 'The face of Japan is changing every day as taste, convenience,' - Time spent: 0.91 seconds
+Line 20: 'luxury which few can afford unless they have inherited them.' - Time spent: 0.59 seconds
+Line 20: 'luxury which few can afford unless they have inherited them.' - Time spent: 0.74 seconds
+Line 20: 'luxury which few can afford unless they have inherited them.' - Time spent: 0.90 seconds
+Line 20: 'luxury which few can afford unless they have inherited them.' - Time spent: 1.22 seconds
+Line 19: 'day, the cost of the expensive silks makes the traditional costume a' - Time spent: 0.15 seconds

@@ -2,12 +2,15 @@ import fitz  # PyMuPDF
 import tkinter as tk
 from PIL import Image, ImageTk
 import time
+from utils import get_monitor_dimensions
 from gaze_tracking_utils import GazeTracker
 from face_model_array import face_model_all
 import cv2
 import numpy as np
 import threading
 import os
+from pdfminer.high_level import extract_pages
+from pdfminer.layout import LTTextBoxHorizontal, LTTextLineHorizontal
 
 # Initialize root before anything else
 root = tk.Tk()
@@ -29,7 +32,7 @@ face_model_all *= 10
 landmarks_ids = [33, 133, 362, 263, 61, 291, 1]  # reye, leye, mouth
 face_model = np.asarray([face_model_all[i] for i in landmarks_ids])
 
-monitor_mm, monitor_pixels = (800, 600), (1920, 1080)  # Replace with actual monitor dimensions
+monitor_mm, monitor_pixels = get_monitor_dimensions()  # Replace with actual monitor dimensions
 plane = np.eye(3).reshape(-1)
 
 def extract_lines_from_pdf(pdf_path):
@@ -37,13 +40,19 @@ def extract_lines_from_pdf(pdf_path):
     pdf_document = fitz.open(pdf_path)
     lines = []
 
-    for page_num in range(len(pdf_document)):
+    for page_layout in extract_pages(pdf_path):
+        page_num = page_layout.pageid - 1
         page = pdf_document.load_page(page_num)
-        text = page.get_text("blocks")
 
-        for block in text:
-            if block[6] == 0:  # this is a text block
-                lines.append(block)
+        for element in page_layout:
+            if isinstance(element, LTTextBoxHorizontal):
+                for line in element:
+                    if isinstance(line, LTTextLineHorizontal):
+                        bbox = line.bbox
+                        lines.append((bbox[0], bbox[1], bbox[2], bbox[3], line.get_text().strip()))
+
+    return lines
+
     
     return lines
 
@@ -61,30 +70,25 @@ def on_vertical_scroll(event):
 def update_gaze_tracking():
     global current_line, new_lines_accessed, start_time, frame
     while tracking:
-        # print("Updating gaze tracking...")  # Debugging print statement
         if frame is not None:
             point_on_screen = gaze_tracker.process_frame(frame, face_model, face_model_all, landmarks_ids, plane, monitor_mm, monitor_pixels)
             if point_on_screen:
-                pdf_coordinates = convert_screen_to_pdf_coordinates(point_on_screen)
+                pdf_coordinates = convert_screen_to_pdf_coordinates(point_on_screen, page_rect, monitor_pixels)
                 update_line_access(pdf_coordinates)
             else:
                 print("No gaze point detected on screen.")  # Debugging print statement
-        time.sleep(1)  # Sleep for a second before the next update
+        time.sleep(0.1)  # Sleep for a second before the next update
 
 def capture_webcam_frames():
     global frame
     cap = cv2.VideoCapture(0)
     while True:
         ret, frame = cap.read()
-        if ret:
-            cv2.imshow('Webcam Frame', frame)
-            cv2.waitKey(1)
-        else:
+        if not ret:
             break
     cap.release()
-    cv2.destroyAllWindows()
 
-def convert_screen_to_pdf_coordinates(point_on_screen):
+def convert_screen_to_pdf_coordinates(point_on_screen, page_rect, monitor_pixels):
     screen_x, screen_y = point_on_screen
     pdf_x = screen_x / monitor_pixels[0] * page_rect.width
     pdf_y = screen_y / monitor_pixels[1] * page_rect.height
@@ -93,8 +97,7 @@ def convert_screen_to_pdf_coordinates(point_on_screen):
 def update_line_access(pdf_coordinates):
     global current_line, new_lines_accessed, start_time
     x, y = pdf_coordinates
-    for i, line in enumerate(lines):
-        x0, y0, x1, y1 = line[:4]
+    for i, (x0, y0, x1, y1, text) in enumerate(lines):
         if x0 <= x <= x1 and y0 <= y <= y1:
             if i != current_line:
                 current_line = i
@@ -103,10 +106,10 @@ def update_line_access(pdf_coordinates):
             line_times[i] = line_times.get(i, 0) + (time.time() - start_time)
             start_time = time.time()
 
-            print(f"Accessing line {i}: Time spent so far: {line_times[i]:.2f} seconds")  # Debugging print statement
+            print(f"Accessing line {i}: '{text}' - Time spent so far: {line_times[i]:.2f} seconds")  # Debugging print statement
 
             with open('reading_times.txt', 'a') as f:
-                f.write(f"Line {i}: {line[4]} - Time spent: {line_times[i]:.2f} seconds\n")
+                f.write(f"Line {i}: '{text}' - Time spent: {line_times[i]:.2f} seconds\n")
 
             if new_lines_accessed % 3 == 0:
                 for j, t in line_times.items():
@@ -114,6 +117,7 @@ def update_line_access(pdf_coordinates):
                         hard_lines.append(j)
                 print("Hard to understand lines:", hard_lines)  # Debugging print statement
             break
+
 
 
 def display_reading_times():
