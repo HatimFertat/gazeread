@@ -766,3 +766,58 @@ Line 20: 'luxury which few can afford unless they have inherited them.' - Time s
 Line 20: 'luxury which few can afford unless they have inherited them.' - Time spent: 4.08 seconds
 Line 18: 'Even  if  she  would  like  nothing  better  than  to  wear  a  kimono  every' - Time spent: 0.70 seconds
 Line 27: 'accepted  (at  least  in  Tokyo)  as  the  alternative  a  woman  has  to  an' - Time spent: 7.63 seconds
+Line 7: 'education has brought with it a profound respect for Western culture,' - Time spent: 19.55 seconds
+Line 27: 'accepted  (at  least  in  Tokyo)  as  the  alternative  a  woman  has  to  an' - Time spent: 4.25 seconds
+Line 25: 'especially  in  the  larger  cities,  and  the  traditional  values  associated' - Time spent: 0.51 seconds
+Line 25: 'especially  in  the  larger  cities,  and  the  traditional  values  associated' - Time spent: 0.62 seconds
+Line 26: 'with  the  family  are  losing  ground.  Divorce,  for  example,  is  now' - Time spent: 0.11 seconds
+Line 26: 'with  the  family  are  losing  ground.  Divorce,  for  example,  is  now' - Time spent: 0.22 seconds
+Line 25: 'especially  in  the  larger  cities,  and  the  traditional  values  associated' - Time spent: 0.72 seconds
+Line 27: 'accepted  (at  least  in  Tokyo)  as  the  alternative  a  woman  has  to  an' - Time spent: 4.46 seconds
+Line 22: 'and
+ economic necessity dictate. Underneath the surface, at an' - Time spent: 6.76 seconds
+Line 13: 'The Japanese woman who abandons the traditional kimono in favor' - Time spent: 16.40 seconds
+Line 11: 'unpardonable, but it has not
+been only adulation for the West which' - Time spent: 4.71 seconds
+Line 20: 'luxury which few can afford unless they have
+inherited them.' - Time spent: 0.58 seconds
+Line 27: 'accepted
+(at least in Tokyo) as the alternative a woman has to an' - Time spent: 3.33 seconds
+Line 14: 'of a dress is not merely imitating some Hollywood star; she is' - Time spent: 2.58 seconds
+Line 17: 'time of
+the year in the offices and busses she must cope with today.' - Time spent: 0.55 seconds
+Line 23: 'undeniably slower pace,
+the moral and spiritual life of the country is' - Time spent: 6.65 seconds
+Line 17: 'time of
+the year in the offices and busses she must cope with today.' - Time spent: 0.57 seconds
+Line 9: 'This feeling has often been indiscriminate and led to a' - Time spent: 0.54 seconds
+Line 14: 'of a dress is not merely imitating some Hollywood star; she is' - Time spent: 0.52 seconds
+Line 25: 'especially in the larger cities, and the traditional values
+associated' - Time spent: 0.57 seconds
+Line 2: 'all
+ over the country with excellent reproductions of Renoir, Van' - Time spent: 3.62 seconds
+Line 0: 'where students gather to listen to records of Beethoven
+and Brahms,' - Time spent: 0.66 seconds
+Line 9: 'This feeling has often been indiscriminate and led to a' - Time spent: 1.13 seconds
+Line 22: 'and
+ economic necessity dictate. Underneath the surface, at an' - Time spent: 2.65 seconds
+Line 19: 'day, the cost of the expensive silks
+makes the traditional costume a' - Time spent: 0.52 seconds
+Line 22: 'and
+ economic necessity dictate. Underneath the surface, at an' - Time spent: 8.71 seconds
+Line 25: 'especially in the larger cities, and the traditional values
+associated' - Time spent: 0.60 seconds
+Line 7: 'education has brought with it a profound respect for Western culture,' - Time spent: 4.30 seconds
+Line 25: 'especially in the larger cities, and the traditional values
+associated' - Time spent: 8.03 seconds
+Line 17: 'time of
+the year in the offices and busses she must cope with today.' - Time spent: 0.91 seconds
+Line 24: 'undergoing similar change. The family
+ system is breaking up,' - Time spent: 13.62 seconds
+Line 7: 'education has brought with it a profound respect for Western culture,' - Time spent: 38.72 seconds
+Line 27: 'accepted
+(at least in Tokyo) as the alternative a woman has to an' - Time spent: 11.06 seconds
+Line 20: 'luxury which few can afford unless they have
+inherited them.' - Time spent: 14.35 seconds
+Line 27: 'accepted
+(at least in Tokyo) as the alternative a woman has to an' - Time spent: 13.50 seconds

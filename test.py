@@ -1,6 +1,6 @@
 import fitz  # PyMuPDF
 import tkinter as tk
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk, ImageDraw
 import time
 from utils import get_monitor_dimensions
 from gaze_tracking_utils import GazeTracker
@@ -8,11 +8,9 @@ from face_model_array import face_model_all
 import cv2
 import numpy as np
 import threading
-import os
 from pdfminer.high_level import extract_pages
 from pdfminer.layout import LTTextBoxHorizontal, LTTextLineHorizontal
 
-# Initialize root before anything else
 root = tk.Tk()
 root.title("PDF Reader with Gaze Tracking")
 
@@ -24,34 +22,32 @@ tracking_thread = None
 capture_thread = None
 frame = None
 
-# Shape of face_model_all = np.zeros((468, 3), dtype=np.float32)
 face_model_all -= face_model_all[1]
 face_model_all *= np.array([1, -1, -1])
 face_model_all *= 10
 
-landmarks_ids = [33, 133, 362, 263, 61, 291, 1]  # reye, leye, mouth
+landmarks_ids = [33, 133, 362, 263, 61, 291, 1]
 face_model = np.asarray([face_model_all[i] for i in landmarks_ids])
 
-monitor_mm, monitor_pixels = get_monitor_dimensions()  # Replace with actual monitor dimensions
-plane = np.eye(3).reshape(-1)
+monitor_mm, monitor_pixels = get_monitor_dimensions()
 
 def extract_lines_from_pdf(pdf_path):
-    global pdf_document
-    pdf_document = fitz.open(pdf_path)
-    lines = []
+    document = fitz.open(pdf_path)
+    all_lines_data = []  # This will store all lines data across the document
 
-    for page_layout in extract_pages(pdf_path):
-        page_num = page_layout.pageid - 1
-        page = pdf_document.load_page(page_num)
+    for page_number, page in enumerate(document):
+        text_dict = page.get_text("dict")
+        for block in text_dict["blocks"]:
+            if "lines" in block:  # Ensure there are lines in the block
+                for line in block["lines"]:
+                    # Extracting bounding box and text
+                    bbox = line["bbox"]  # Bounding box
+                    text = line["spans"][0]["text"] if line["spans"] else ""  # Text content of the line
+                    # Create a list containing all required elements
+                    line_data = [page_number + 1, bbox[0], bbox[1], bbox[2], bbox[3], text]
+                    all_lines_data.append(line_data)
+    return all_lines_data
 
-        for element in page_layout:
-            if isinstance(element, LTTextBoxHorizontal):
-                for line in element:
-                    if isinstance(line, LTTextLineHorizontal):
-                        bbox = line.bbox
-                        lines.append((bbox[0], bbox[1], bbox[2], bbox[3], line.get_text().strip()))
-
-    return lines
 
 def update_canvas(page_image):
     photo = ImageTk.PhotoImage(page_image)
@@ -68,13 +64,11 @@ def update_gaze_tracking():
     global current_line, new_lines_accessed, start_time, frame
     while tracking:
         if frame is not None:
-            point_on_screen = gaze_tracker.process_frame(frame, face_model, face_model_all, landmarks_ids, plane, monitor_mm, monitor_pixels)
+            point_on_screen = gaze_tracker.process_frame(frame, face_model, face_model_all, landmarks_ids)
             if point_on_screen:
                 pdf_coordinates = convert_screen_to_pdf_coordinates(point_on_screen, page_rect, monitor_pixels)
                 update_line_access(pdf_coordinates)
-            else:
-                print("No gaze point detected on screen.")  # Debugging print statement
-        time.sleep(0.05)  # Reduced sleep time for more frequent updates
+        time.sleep(0.05)
 
 def capture_webcam_frames():
     global frame
@@ -94,25 +88,25 @@ def convert_screen_to_pdf_coordinates(point_on_screen, page_rect, monitor_pixels
 def update_line_access(pdf_coordinates):
     global current_line, new_lines_accessed, start_time
     x, y = pdf_coordinates
-    for i, (x0, y0, x1, y1, text) in enumerate(lines):
+    for i, line in enumerate(lines):
+        [page_num, x0, y0, x1, y1, text] = line
         if x0 <= x <= x1 and y0 <= y <= y1:
             if i != current_line:
                 current_line = i
                 new_lines_accessed += 1
-            
-            line_times[i] = line_times.get(i, 0) + (time.time() - start_time)
-            start_time = time.time()
 
-            print(f"Accessing line {i}: '{text}' - Time spent so far: {line_times[i]:.2f} seconds")  # Debugging print statement
+            time_spent = time.time() - start_time
+            if time_spent >= 0.5:
+                line_times[i] = line_times.get(i, 0) + time_spent
+                start_time = time.time()
 
-            with open('reading_times.txt', 'a') as f:
-                f.write(f"Line {i}: '{text}' - Time spent: {line_times[i]:.2f} seconds\n")
+                with open('reading_times.txt', 'a') as f:
+                    f.write(f"Line {i}: '{text}' - Time spent: {line_times[i]:.2f} seconds\n")
 
-            if new_lines_accessed % 3 == 0:
-                for j, t in line_times.items():
-                    if t > threshold_time and j not in hard_lines:
-                        hard_lines.append(j)
-                print("Hard to understand lines:", hard_lines)  # Debugging print statement
+                if new_lines_accessed % 3 == 0:
+                    for j, t in line_times.items():
+                        if t > threshold_time and j not in hard_lines:
+                            hard_lines.append(j)
             break
 
 def display_reading_times():
@@ -128,30 +122,35 @@ def display_reading_times():
     text.config(state=tk.DISABLED)
 
 def open_pdf():
-    file_path = "The Setting Sun 6.pdf"  # Replace with your PDF file path
+    file_path = "The Setting Sun 6.pdf"
     if file_path:
         global lines, pdf_document, page_rect
-        print(f"Opening PDF: {file_path}")  # Debugging print statement
         lines = extract_lines_from_pdf(file_path)
+        pdf_document = fitz.open(file_path)
         page_rect = pdf_document[0].rect
-        page_image = render_pdf_page(pdf_document[0])
+        page_image = render_pdf_page_with_lines(pdf_document[0], lines)
         update_canvas(page_image)
         threading.Thread(target=render_and_update_canvas).start()
-        print("PDF opened and displayed.")  # Debugging print statement
 
 def render_and_update_canvas():
-    page_image = render_pdf_page(pdf_document[0])
+    page_image = render_pdf_page_with_lines(pdf_document[0], lines)
     update_canvas(page_image)
 
-def render_pdf_page(page):
-    zoom = 2  # zoom factor for better readability
+def render_pdf_page_with_lines(page, lines):
+    zoom = 2
     mat = fitz.Matrix(zoom, zoom)
     pix = page.get_pixmap(matrix=mat)
     img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+
+    draw = ImageDraw.Draw(img)
+    for line in lines:
+        [page_num, x0, y0, x1, y1, text] = line
+        draw.rectangle([x0 * zoom, y0 * zoom, x1 * zoom, y1 * zoom], outline="red", width=2)
+
     return img
 
 def start_tracking(event=None):
-    global tracking, tracking_thread,start_time
+    global tracking, tracking_thread, start_time
     start_time = time.time()
     if not tracking:
         print("Starting gaze tracking...")  # Debugging print statement
@@ -161,13 +160,12 @@ def start_tracking(event=None):
 
 def pause_tracking(event=None):
     global tracking
-    print("Pausing gaze tracking...")  # Debugging print statement
     tracking = False
 
 def write_final_reading_data():
     with open('final_reading_times.txt', 'w') as f:
         for line_num, time_spent in sorted(line_times.items()):
-            f.write(f"Line {line_num}: {lines[line_num][4]} - Time spent: {time_spent:.2f} seconds\n")
+            f.write(f"Line {line_num}: {lines[line_num][5]} - Time spent: {time_spent:.2f} seconds\n")
 
 def stop_tracking(event=None):
     global tracking

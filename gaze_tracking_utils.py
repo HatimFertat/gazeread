@@ -7,13 +7,15 @@ from model import Model
 from albumentations import Compose, Normalize
 from albumentations.pytorch import ToTensorV2
 from mpii_face_gaze_preprocessing import normalize_single_image
-from utils import get_camera_matrix, get_face_landmarks_in_ccs, gaze_2d_to_3d, ray_plane_intersection, get_point_on_screen
+from utils import get_camera_matrix, get_face_landmarks_in_ccs, gaze_2d_to_3d, ray_plane_intersection,get_point_on_screen, get_monitor_dimensions,get_plane, calculate_bias_vector_and_plane
 import os
+
 
 class GazeTracker:
     def __init__(self, calibration_matrix_path, model_path):
         print("Initializing GazeTracker...")  # Debugging print statement
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.monitor_mm, self.monitor_pixels = get_monitor_dimensions()
         self.camera_matrix, self.dist_coefficients = get_camera_matrix(calibration_matrix_path)
         self.model = Model().to(self.device)
         checkpoint = torch.load(model_path)
@@ -36,6 +38,9 @@ class GazeTracker:
             min_detection_confidence=gpu_options['min_detection_confidence'],
             min_tracking_confidence=gpu_options['min_tracking_confidence']
         )
+        self.bias, self.plane = calculate_bias_vector_and_plane("../gaze-data-collection/data/p00/data.csv",self.camera_matrix,self.dist_coefficients, self.model, self.face_mesh)
+
+
         self.smoothing_buffer = collections.deque(maxlen=3)
         self.rvec_buffer = collections.deque(maxlen=3)
         self.tvec_buffer = collections.deque(maxlen=3)
@@ -44,7 +49,7 @@ class GazeTracker:
         self.rvec, self.tvec = None, None
         print("GazeTracker initialized.")  # Debugging print statement
 
-    def process_frame(self, frame, face_model, face_model_all, landmarks_ids, plane, monitor_mm, monitor_pixels):
+    def process_frame(self, frame, face_model, face_model_all, landmarks_ids):
         # print(f"Processing frame of shape: {frame.shape} and type: {frame.dtype}")  # Debugging print statement
         height, width, _ = frame.shape
         image_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -90,12 +95,11 @@ class GazeTracker:
             self.gaze_vector_buffer.append(gaze_vector)
             gaze_vector = np.asarray(self.gaze_vector_buffer).mean(axis=0)
 
-            plane_w = plane[0:3]
-            plane_b = plane[3]
+            plane_w = self.plane[:3]
+            plane_b = self.plane[3]
             result = ray_plane_intersection(face_center.reshape(3), gaze_vector, plane_w, plane_b)
-            point_on_screen = get_point_on_screen(monitor_mm, monitor_pixels, result)
+            point_on_screen = get_point_on_screen(self.monitor_mm, self.monitor_pixels, result)
 
-            # print(f"Gaze point on screen: {point_on_screen}")  # Debugging print statement
             return point_on_screen
         
         print("No face landmarks detected")  # Debugging print statement
