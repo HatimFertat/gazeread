@@ -821,3 +821,44 @@ Line 20: 'luxury which few can afford unless they have
 inherited them.' - Time spent: 14.35 seconds
 Line 27: 'accepted
 (at least in Tokyo) as the alternative a woman has to an' - Time spent: 13.50 seconds
+Line 3: 'Gogh, or Matisse. It
+ may be debated how deeply this interest in' - Time spent: 11.00 seconds
+Line 11: 'unpardonable, but it has not
+been only adulation for the West which' - Time spent: 5.92 seconds
+Line 12: 'has led to many of the changes so deplored by
+the foreign visitor.' - Time spent: 1.51 seconds
+Line 13: 'The Japanese woman who abandons the traditional kimono in favor' - Time spent: 0.57 seconds
+Line 6: 'grandfather did. The fact remains that almost everywhere in Japan' - Time spent: 2.04 seconds
+Line 26: 'with the family are losing ground. Divorce, for example, is now' - Time spent: 0.51 seconds
+Line 25: 'especially in the larger cities, and the traditional values
+associated' - Time spent: 17.08 seconds
+Line 0: 'where students gather to listen to records of Beethoven
+and Brahms,' - Time spent: 1.02 seconds
+Line 24: 'undergoing similar change. The family
+ system is breaking up,' - Time spent: 3.16 seconds
+Line 7: 'education has brought with it a profound respect for Western culture,' - Time spent: 11.97 seconds
+Line 14: 'of a dress is not merely imitating some Hollywood star; she is' - Time spent: 11.27 seconds
+Line 6: 'grandfather did. The fact remains that almost everywhere in Japan' - Time spent: 3.12 seconds
+Line 26: 'with the family are losing ground. Divorce, for example, is now' - Time spent: 1.29 seconds
+Line 3: 'Gogh, or Matisse. It
+ may be debated how deeply this interest in' - Time spent: 15.39 seconds
+Line 8: 'and sometimes
+a genuine love.' - Time spent: 3.65 seconds
+Line 3: 'Gogh, or Matisse. It
+ may be debated how deeply this interest in' - Time spent: 16.78 seconds
+Line 25: 'especially in the larger cities, and the traditional values
+associated' - Time spent: 5.31 seconds
+Line 25: 'especially in the larger cities, and the traditional values
+associated' - Time spent: 20.49 seconds
+Line 3: 'Gogh, or Matisse. It
+ may be debated how deeply this interest in' - Time spent: 1.82 seconds
+Line 21: 'The face of Japan is changing every day as taste, convenience,' - Time spent: 1.21 seconds
+Line 7: 'education has brought with it a profound respect for Western culture,' - Time spent: 3.74 seconds
+Line 23: 'undeniably slower pace,
+the moral and spiritual life of the country is' - Time spent: 5.82 seconds
+Line 21: 'The face of Japan is changing every day as taste, convenience,' - Time spent: 5.02 seconds
+Line 14: 'of a dress is not merely imitating some Hollywood star; she is' - Time spent: 12.33 seconds
+Line 20: 'luxury which few can afford unless they have
+inherited them.' - Time spent: 8.53 seconds
+Line 4: 'modern Western literature and art
+penetrates, whether the farmer in' - Time spent: 0.90 seconds

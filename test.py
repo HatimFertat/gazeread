@@ -8,8 +8,6 @@ from face_model_array import face_model_all
 import cv2
 import numpy as np
 import threading
-from pdfminer.high_level import extract_pages
-from pdfminer.layout import LTTextBoxHorizontal, LTTextLineHorizontal
 
 root = tk.Tk()
 root.title("PDF Reader with Gaze Tracking")
@@ -33,21 +31,18 @@ monitor_mm, monitor_pixels = get_monitor_dimensions()
 
 def extract_lines_from_pdf(pdf_path):
     document = fitz.open(pdf_path)
-    all_lines_data = []  # This will store all lines data across the document
+    all_lines_data = []
 
     for page_number, page in enumerate(document):
         text_dict = page.get_text("dict")
         for block in text_dict["blocks"]:
-            if "lines" in block:  # Ensure there are lines in the block
+            if "lines" in block:
                 for line in block["lines"]:
-                    # Extracting bounding box and text
-                    bbox = line["bbox"]  # Bounding box
-                    text = line["spans"][0]["text"] if line["spans"] else ""  # Text content of the line
-                    # Create a list containing all required elements
+                    bbox = line["bbox"]
+                    text = line["spans"][0]["text"] if line["spans"] else ""
                     line_data = [page_number + 1, bbox[0], bbox[1], bbox[2], bbox[3], text]
                     all_lines_data.append(line_data)
     return all_lines_data
-
 
 def update_canvas(page_image):
     photo = ImageTk.PhotoImage(page_image)
@@ -61,14 +56,16 @@ def on_vertical_scroll(event):
         update_gaze_tracking()
 
 def update_gaze_tracking():
-    global current_line, new_lines_accessed, start_time, frame
+    global current_line, new_lines_accessed, start_time, frame, gaze_points_computed
     while tracking:
         if frame is not None:
             point_on_screen = gaze_tracker.process_frame(frame, face_model, face_model_all, landmarks_ids)
             if point_on_screen:
+                gaze_points_computed += 1
+                draw_gaze_point(point_on_screen)
                 pdf_coordinates = convert_screen_to_pdf_coordinates(point_on_screen, page_rect, monitor_pixels)
                 update_line_access(pdf_coordinates)
-        time.sleep(0.05)
+        time.sleep(0.01)
 
 def capture_webcam_frames():
     global frame
@@ -108,6 +105,10 @@ def update_line_access(pdf_coordinates):
                         if t > threshold_time and j not in hard_lines:
                             hard_lines.append(j)
             break
+
+def draw_gaze_point(point_on_screen):
+    screen_x, screen_y = point_on_screen
+    canvas.create_oval(screen_x - 5, screen_y - 5, screen_x + 5, screen_y + 5, outline="blue", width=2)
 
 def display_reading_times():
     reading_window = tk.Toplevel(root)
@@ -150,13 +151,15 @@ def render_pdf_page_with_lines(page, lines):
     return img
 
 def start_tracking(event=None):
-    global tracking, tracking_thread, start_time
+    global tracking, tracking_thread, start_time, gaze_points_computed
     start_time = time.time()
+    gaze_points_computed = 0
     if not tracking:
         print("Starting gaze tracking...")  # Debugging print statement
         tracking = True
         tracking_thread = threading.Thread(target=update_gaze_tracking)
         tracking_thread.start()
+        threading.Thread(target=compute_gaze_points_per_minute).start()
 
 def pause_tracking(event=None):
     global tracking
@@ -171,14 +174,21 @@ def stop_tracking(event=None):
     global tracking
     print("Stopping gaze tracking and closing application...")  # Debugging print statement
     tracking = False
-    write_final_reading_data()  # Write final reading data to file
+    write_final_reading_data()
     root.destroy()
 
 def start_capture_thread():
     global capture_thread
     capture_thread = threading.Thread(target=capture_webcam_frames)
-    capture_thread.daemon = True  # Ensures thread exits when main program exits
+    capture_thread.daemon = True
     capture_thread.start()
+
+def compute_gaze_points_per_minute():
+    global gaze_points_computed
+    while tracking:
+        time.sleep(60)
+        print(f"Gaze points per minute: {gaze_points_computed}")
+        gaze_points_computed = 0
 
 lines = []
 line_times = {}
@@ -187,6 +197,7 @@ new_lines_accessed = 0
 threshold_time = 5
 hard_lines = []
 canvas_height = 800
+gaze_points_computed = 0
 
 canvas = tk.Canvas(root, width=1280, height=canvas_height)
 canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
