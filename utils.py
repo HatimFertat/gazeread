@@ -6,13 +6,17 @@ import numpy as np
 import yaml
 import pandas as pd
 import mediapipe as mp
-from face_model_array import face_model_all
 from albumentations import Compose, Normalize
 from albumentations.pytorch import ToTensorV2
 from mpii_face_gaze_preprocessing import normalize_single_image
 import torch
 from model import Model
+from sklearn.linear_model import Ridge
+from sklearn.preprocessing import StandardScaler
 
+
+
+face_model_all = np.load("face_model.npy")
 face_model_all -= face_model_all[1]
 face_model_all *= np.array([1, -1, -1])
 face_model_all *= 10
@@ -176,14 +180,6 @@ def get_point_on_screen(monitor_mm: Tuple[float, float], monitor_pixels: Tuple[f
 
     return tuple(np.asarray([result_x, result_y]).round().astype(int))
 
-def fit_plane(points):
-    points = np.array(points)
-    centroid = np.mean(points, axis=0)
-    centered_points = points - centroid
-    _, _, vh = np.linalg.svd(centered_points)
-    normal = vh[2, :]
-    d = -centroid.dot(normal)
-    return np.append(normal, d)
 
 def detect_landmarks_and_estimate_gaze(image_path, face_mesh, camera_matrix, dist_coefficients):
     image = cv2.imread(image_path)
@@ -200,30 +196,24 @@ def detect_landmarks_and_estimate_gaze(image_path, face_mesh, camera_matrix, dis
         return head_rotation_matrix, tvec
     return None, None
 
-def get_plane(csvpath,camera_matrix,dist_coefficients,face_mesh=None):
-    base_path = "../gaze-data-collection/data/p00/"
-    calibration_data = pd.read_csv(csvpath)
-
-    if face_mesh == None:
-        face_mesh = mp.solutions.face_mesh.FaceMesh(static_image_mode=False, max_num_faces=1)
-
-    calibration_points_3d = []
-    calibration_points_2d = []
-
-    for index, row in calibration_data.iterrows():
-        image_path = base_path + row['file_name']
-        point_on_screen = eval(row['point_on_screen'])  # Convert string to tuple
-        head_rotation_matrix, tvec = detect_landmarks_and_estimate_gaze(image_path, face_mesh, camera_matrix, dist_coefficients)
-        if head_rotation_matrix is not None and tvec is not None:
-            calibration_points_3d.append((head_rotation_matrix @ tvec).reshape(-1))
-            calibration_points_2d.append(point_on_screen)
-
-    plane_parameters = fit_plane(calibration_points_3d)
-    return plane_parameters
-
-def calculate_bias_vector_and_plane(csvpath, camera_matrix, dist_coefficients,model, face_mesh=None):
+def calculate_calibration(csvpath, camera_matrix_path, face_mesh=None):
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     base_path = "../gaze-data-collection/data/p00/"
+
+    model = Model().to(device)
+    checkpoint = torch.load("p00.ckpt")
+    model.load_state_dict(checkpoint["state_dict"])
+    model.eval()
+
+    camera_matrix,dist_coeffs = get_camera_matrix(camera_matrix_path)
+
+    face_model_all = np.load("face_model.npy")
+    face_model_all -= face_model_all[1]
+    face_model_all *= np.array([1, -1, -1])
+    face_model_all *= 10
+
+    landmarks_ids = [33, 133, 362, 263, 61, 291, 1]
+    face_model = np.asarray([face_model_all[i] for i in landmarks_ids])
 
     try:
         calibration_data = pd.read_csv(csvpath)
@@ -234,13 +224,14 @@ def calculate_bias_vector_and_plane(csvpath, camera_matrix, dist_coefficients,mo
     if face_mesh is None:
         face_mesh = mp.solutions.face_mesh.FaceMesh(static_image_mode=False, max_num_faces=1)
 
-    estimated_gaze_vectors = []
+    estimated_points = []
     known_points = []
 
     monitor_mm, monitor_pixels = get_monitor_dimensions()
-    plane = get_plane("../gaze-data-collection/data/p00/data.csv",camera_matrix,dist_coefficients,face_mesh)
-
-
+    # plane = get_plane("../gaze-data-collection/data/p00/data.csv",camera_matrix,dist_coefficients,face_mesh)
+    plane = plane_equation(np.eye(3), np.asarray([[0], [0], [0]]))
+    plane_w = plane[:3]
+    plane_b = plane[3]
     for index, row in calibration_data.iterrows():
         image_path = base_path + row['file_name']
         point_on_screen = eval(row['point_on_screen'])  # Convert string to tuple
@@ -254,11 +245,11 @@ def calculate_bias_vector_and_plane(csvpath, camera_matrix, dist_coefficients,mo
             face_landmarks = np.asarray([[landmark.x * width, landmark.y * height] for landmark in results.multi_face_landmarks[0].landmark])
             face_landmarks = np.asarray([face_landmarks[i] for i in landmarks_ids])
 
-            success, rvec, tvec, inliers = cv2.solvePnPRansac(face_model, face_landmarks, camera_matrix, dist_coefficients, useExtrinsicGuess=True, flags=cv2.SOLVEPNP_EPNP)
+            success, rvec, tvec, inliers = cv2.solvePnPRansac(face_model, face_landmarks, camera_matrix, dist_coeffs, useExtrinsicGuess=True, flags=cv2.SOLVEPNP_EPNP)
             head_rotation_matrix, _ = cv2.Rodrigues(rvec.reshape(-1))
 
             # Estimate gaze vector using the model
-            face_model_transformed, face_model_all_transformed = get_face_landmarks_in_ccs(camera_matrix, dist_coefficients, image.shape, results, face_model, face_model_all, landmarks_ids)
+            face_model_transformed, face_model_all_transformed = get_face_landmarks_in_ccs(camera_matrix, dist_coeffs, image.shape, results, face_model, face_model_all, landmarks_ids)
             left_eye_center = 0.5 * (face_model_transformed[:, 2] + face_model_transformed[:, 3]).reshape((3, 1))
             right_eye_center = 0.5 * (face_model_transformed[:, 0] + face_model_transformed[:, 1]).reshape((3, 1))
             face_center = face_model_transformed.mean(axis=1).reshape((3, 1))
@@ -267,6 +258,10 @@ def calculate_bias_vector_and_plane(csvpath, camera_matrix, dist_coefficients,mo
             img_warped_right_eye, _, _ = normalize_single_image(image_rgb, rvec, None, right_eye_center, camera_matrix)
             img_warped_face, _, rotation_matrix = normalize_single_image(image_rgb, rvec, None, face_center, camera_matrix, is_eye=False)
 
+            plane = plane_equation(rotation_matrix, np.asarray([[0], [0], [0]]))
+            plane_w = plane[0:3]
+            plane_b = plane[3]
+            
             transform = Compose([Normalize(), ToTensorV2()])
             person_idx = torch.Tensor([0]).unsqueeze(0).long()
             full_face_image = transform(image=img_warped_face)["image"].unsqueeze(0).float().to(model.device)
@@ -279,18 +274,65 @@ def calculate_bias_vector_and_plane(csvpath, camera_matrix, dist_coefficients,mo
 
             known_points.append(point_on_screen)
 
-            plane_w = plane[:3]
-            plane_b = plane[3]
             result = ray_plane_intersection(face_center.reshape(3), gaze_vector, plane_w, plane_b)
             point_on_screen = get_point_on_screen(monitor_mm, monitor_pixels, result)
 
-            estimated_gaze_vectors.append(point_on_screen)
+            estimated_points.append(point_on_screen)
 
-    estimated_gaze_vectors = np.array(estimated_gaze_vectors)
+    estimated_points = np.array(estimated_points)
     known_points = np.array(known_points)
 
     # Calculate the bias vector
-    bias = np.mean(known_points - estimated_gaze_vectors, axis=0)
+    # bias = np.mean(known_points - estimated_points, axis=0)
 
     # Ensure the bias tensor is on the same device as the model
-    return torch.tensor(bias, dtype=torch.float32, device=model.device), plane
+    return known_points,estimated_points
+
+def fit_screen_point_ridge(screen_points_raw, screen_points_true):
+    scaler_x = StandardScaler().fit(screen_points_raw)
+    scaler_y = StandardScaler().fit(screen_points_true)
+    screen_points_raw_scaled = scaler_x.transform(screen_points_raw)
+    screen_points_true_scaled = scaler_y.transform(screen_points_true)
+
+    # Fit Ridge regression model
+    ridge = Ridge(alpha=1.0)
+    ridge.fit(screen_points_raw_scaled, screen_points_true_scaled)
+    
+    return ridge, scaler_x, scaler_y
+
+def predict_screen_point_ridge(screen_point_calibrater, screen_point):
+    [ridge, scaler_x, scaler_y] = screen_point_calibrater
+    screen_point_scaled = scaler_x.transform(screen_point)
+    predicted_scaled = ridge.predict(screen_point_scaled)
+    return scaler_y.inverse_transform(predicted_scaled)
+
+if __name__ == '__main__':
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    base_path = "../gaze-data-collection/data/p00/"
+    csvpath = "../gaze-data-collection/data/p00/data.csv"
+    
+    gpu_options = {
+            "model_complexity": 1,
+            "refine_landmarks": True,
+            "max_num_faces": 1,
+            "min_detection_confidence": 0.5,
+            "min_tracking_confidence": 0.5,
+            "use_gpu": True
+        }
+    face_mesh = mp.solutions.face_mesh.FaceMesh(
+        static_image_mode=False, 
+        max_num_faces=gpu_options['max_num_faces'],
+        refine_landmarks=gpu_options['refine_landmarks'],
+        min_detection_confidence=gpu_options['min_detection_confidence'],
+        min_tracking_confidence=gpu_options['min_tracking_confidence']
+    )
+    camera_matrix, dist_coeffs = get_camera_matrix('./calibration_matrix.yaml')
+    model = Model().to(device)
+    checkpoint = torch.load('p00.ckpt')
+    model.load_state_dict(checkpoint["state_dict"])
+    model.eval()
+
+    known_points,estimated_points = calculate_calibration(csvpath,camera_matrix,dist_coeffs,model,face_mesh)
+
+    print("done")
+

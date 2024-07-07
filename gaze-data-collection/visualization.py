@@ -1,5 +1,12 @@
+from argparse import ArgumentParser
+from typing import Tuple
+
+import cv2
+import mediapipe as mp
 import numpy as np
-landmarks_ids = [33, 133, 362, 263, 61, 291, 1]
+import pandas as pd
+import yaml
+from matplotlib import pyplot as plt
 
 # face model from https://github.com/google/mediapipe/blob/master/mediapipe/modules/face_geometry/data/canonical_face_model.obj
 face_model_all: np.ndarray = np.array([
@@ -472,3 +479,145 @@ face_model_all: np.ndarray = np.array([
     [4.253081, 2.772296, 3.315305],
     [4.530000, 2.910000, 3.339685]
 ], dtype=float)
+face_model_all -= face_model_all[1]
+face_model_all *= np.array([1, -1, -1])  # fix axis
+face_model_all *= 10
+
+landmarks_ids = [33, 133, 362, 263, 61, 291, 1]  # reye, leye, mouth
+face_model = np.asarray([face_model_all[i] for i in landmarks_ids])
+
+
+def get_camera_matrix(base_path: str) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Load camera_matrix and dist_coefficients from `{base_path}/calibration_matrix.yaml`.
+
+    :param base_path: base path of data
+    :return: camera intrinsic matrix and dist_coefficients
+    """
+    with open(f'{base_path}/calibration_matrix.yaml', 'r') as file:
+        calibration_matrix = yaml.safe_load(file)
+    camera_matrix = np.asarray(calibration_matrix['camera_matrix']).reshape(3, 3)
+    dist_coefficients = np.asarray(calibration_matrix['dist_coeff'])
+    return camera_matrix, dist_coefficients
+
+
+def setup_figure() -> Tuple:
+    fig = plt.figure(figsize=(20, 10))
+    ax = fig.add_subplot(111, projection='3d')
+    ax.set_xlim(-400, 400)
+    ax.set_ylim(-100, 700)
+    ax.set_zlim(-10, 800 - 10)
+    ax.set_xlabel('x')
+    ax.set_ylabel('y')
+    ax.set_zlabel('z')
+    return fig, ax
+
+
+def plot_screen(ax, screen_width_mm, screen_height_mm, screen_height_mm_offset) -> None:
+    ax.plot(0, 0, 0, linestyle="", marker="o", color='#1f77b4', label='webcam')
+
+    screen_x = [-screen_width_mm / 2, screen_width_mm / 2]
+    screen_y = [screen_height_mm_offset, screen_height_mm + screen_height_mm_offset]
+    ax.plot(
+        [screen_x[0], screen_x[1], screen_x[1], screen_x[0], screen_x[0]],
+        [screen_y[0], screen_y[0], screen_y[1], screen_y[1], screen_y[0]],
+        [0, 0, 0, 0, 0],
+        color='#ff7f0e',
+        label='screen'
+    )
+
+
+def plot_target_on_screen(ax, point_on_screen_px, monitor_mm, monitor_pixels, screen_height_mm_offset):
+    screen_width_ratio = monitor_mm[0] / monitor_pixels[0]
+    screen_height_ratio = monitor_mm[1] / monitor_pixels[1]
+
+    point_on_screen_mm = (monitor_mm[0] / 2 - point_on_screen_px[0] * screen_width_ratio, point_on_screen_px[1] * screen_height_ratio + screen_height_mm_offset)
+    ax.plot(point_on_screen_mm[0], point_on_screen_mm[1], 0, linestyle="", marker="X", color='#9467bd', label='target on screen')
+    return point_on_screen_mm[0], point_on_screen_mm[1], 0
+
+
+def get_face_landmarks_in_ccs(camera_matrix, dist_coefficients, shape, results):
+    """
+    Fit `face_model` onto `face_landmarks` using `solvePnP`.
+
+    :param camera_matrix: camera intrinsic matrix
+    :param dist_coefficients: distortion coefficients
+    :param shape: image shape
+    :param results: output of MediaPipe FaceMesh
+    :return: full face model in the camera coordinate system
+    """
+    height, width, _ = shape
+    face_landmarks = np.asarray([[landmark.x * width, landmark.y * height] for landmark in results.multi_face_landmarks[0].landmark])
+    face_landmarks = np.asarray([face_landmarks[i] for i in landmarks_ids])
+
+    rvec, tvec = None, None
+    success, rvec, tvec, inliers = cv2.solvePnPRansac(face_model, face_landmarks, camera_matrix, dist_coefficients, rvec=rvec, tvec=tvec, useExtrinsicGuess=True, flags=cv2.SOLVEPNP_EPNP)  # Initial fit
+    for _ in range(10):
+        success, rvec, tvec = cv2.solvePnP(face_model, face_landmarks, camera_matrix, dist_coefficients, rvec=rvec, tvec=tvec, useExtrinsicGuess=True, flags=cv2.SOLVEPNP_ITERATIVE)  # Second fit for higher accuracy
+
+    head_rotation_matrix, _ = cv2.Rodrigues(rvec.reshape(-1))
+    return np.dot(head_rotation_matrix, face_model_all.T) + tvec.reshape((3, 1))  # 3D positions of facial landmarks
+
+
+def plot_face_landmarks(ax, face_model_all_transformed):
+    ax.plot(face_model_all_transformed[0, :], face_model_all_transformed[1, :], face_model_all_transformed[2, :], linestyle="", marker="o", color='#7f7f7f', markersize=1, label='face landmarks')
+
+
+def plot_eye_to_target_on_screen_line(ax, face_model_all_transformed, point_on_screen_3d):
+    eye_center = (face_model_all_transformed[:, 33] + face_model_all_transformed[:, 133]) / 2
+    ax.plot([point_on_screen_3d[0], eye_center[0]], [point_on_screen_3d[1], eye_center[1]], [point_on_screen_3d[2], eye_center[2]], color='#2ca02c', label='right eye gaze vector')
+
+    eye_center = (face_model_all_transformed[:, 263] + face_model_all_transformed[:, 362]) / 2
+    ax.plot([point_on_screen_3d[0], eye_center[0]], [point_on_screen_3d[1], eye_center[1]], [point_on_screen_3d[2], eye_center[2]], color='#d62728', label='left eye gaze vector')
+
+
+def main(base_path: str, screen_height_mm_offset: int = 10):
+    fix_qt_cv_mismatch()
+
+    camera_matrix, dist_coefficients = get_camera_matrix(base_path)
+
+    face_mesh = mp.solutions.face_mesh.FaceMesh(static_image_mode=True)
+
+    df = pd.read_csv(f'{base_path}/data.csv')
+    for idx, row in df.iterrows():
+        monitor_mm = tuple(map(int, row['monitor_mm'][1:-1].split(',')))
+        monitor_pixels = tuple(map(int, row['monitor_pixels'][1:-1].split(',')))
+        point_on_screen_px = tuple(map(int, row['point_on_screen'][1:-1].split(',')))
+
+        fig, ax = setup_figure()
+        plot_screen(ax, monitor_mm[0], monitor_mm[1], screen_height_mm_offset)
+        point_on_screen_3d = plot_target_on_screen(ax, point_on_screen_px, monitor_mm, monitor_pixels, screen_height_mm_offset)
+
+        frame = cv2.imread(f'{base_path}/{row["file_name"]}')
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        frame_rgb.flags.writeable = False  # mark the image as not writeable to pass by reference
+        results = face_mesh.process(frame_rgb)
+
+        if results is None or results.multi_face_landmarks is None:
+            print('Mediapipe cloud not detect a face.')
+            continue
+
+        face_model_all_transformed = get_face_landmarks_in_ccs(camera_matrix, dist_coefficients, frame.shape, results)
+        plot_face_landmarks(ax, face_model_all_transformed)
+        plot_eye_to_target_on_screen_line(ax, face_model_all_transformed, point_on_screen_3d)
+
+        ax.view_init(-70, -90)
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig(f'3d_plot_{idx}.png')
+        plt.show()
+
+
+def fix_qt_cv_mismatch():
+    import os
+    for k, v in os.environ.items():
+        if k.startswith("QT_") and "cv2" in v:
+            del os.environ[k]
+
+
+if __name__ == '__main__':
+    parser = ArgumentParser()
+    parser.add_argument("--base_path", type=str, default='./data/p00')
+    args = parser.parse_args()
+
+    main(args.base_path)

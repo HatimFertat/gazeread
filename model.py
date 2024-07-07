@@ -132,4 +132,6 @@ class Model(LightningModule):
         fc_concatenated = torch.cat((out_fc_face, out_fc_eye), dim=1)
         t_hat = self.fc_eyes_face(fc_concatenated)  # subject-independent term
 
+        # print(t_hat,self.subject_biases[person_idx].squeeze(1))
+
         return t_hat + self.subject_biases[person_idx].squeeze(1)  # t_hat + subject-dependent bias term

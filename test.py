@@ -8,13 +8,17 @@ from face_model_array import face_model_all
 import cv2
 import numpy as np
 import threading
+import warnings
 
+warnings.filterwarnings("ignore", category=UserWarning, message=r'SymbolDatabase.GetPrototype\(\) is deprecated')
 root = tk.Tk()
+# root.attributes("-fullscreen", True)
 root.title("PDF Reader with Gaze Tracking")
 
+calibration_matrix_path="./calibration_matrix.yaml"
 pdf_document = None
 current_page = 0
-gaze_tracker = GazeTracker(calibration_matrix_path="./calibration_matrix.yaml", model_path="./p00.ckpt")
+gaze_tracker = GazeTracker(calibration_matrix_path, model_path="./p00.ckpt")
 tracking = False
 tracking_thread = None
 capture_thread = None
@@ -26,6 +30,8 @@ face_model_all *= 10
 
 landmarks_ids = [33, 133, 362, 263, 61, 291, 1]
 face_model = np.asarray([face_model_all[i] for i in landmarks_ids])
+
+
 
 monitor_mm, monitor_pixels = get_monitor_dimensions()
 
@@ -46,14 +52,32 @@ def extract_lines_from_pdf(pdf_path):
 
 def update_canvas(page_image):
     photo = ImageTk.PhotoImage(page_image)
-    canvas.create_image(0, 0, anchor=tk.NW, image=photo)
+    canvas_width = canvas.winfo_width()
+    canvas_height = canvas.winfo_height()
+    image_width = photo.width()
+    image_height = photo.height()
+    x_offset = (canvas_width - image_width) // 4
+    y_offset = (canvas_height - image_height) // 4
+    canvas.create_image(x_offset, y_offset, anchor=tk.NW, image=photo)
     canvas.image = photo
     canvas.config(scrollregion=canvas.bbox(tk.ALL))
 
 def on_vertical_scroll(event):
+    # pause_tracking()
     canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
     if tracking:
         update_gaze_tracking()
+    update_visible_lines()
+
+def update_visible_lines():
+    canvas_y = canvas.canvasy(0)
+    visible_height = canvas.winfo_height()
+    visible_lines = []
+    for i, line in enumerate(lines):
+        [page_num, x0, y0, x1, y1, text] = line
+        if canvas_y <= y0 <= canvas_y + visible_height or canvas_y <= y1 <= canvas_y + visible_height:
+            visible_lines.append(line)
+    return visible_lines
 
 def update_gaze_tracking():
     global current_line, new_lines_accessed, start_time, frame, gaze_points_computed
@@ -64,28 +88,15 @@ def update_gaze_tracking():
                 gaze_points_computed += 1
                 draw_gaze_point(point_on_screen)
                 pdf_coordinates = convert_screen_to_pdf_coordinates(point_on_screen, page_rect, monitor_pixels)
-                update_line_access(pdf_coordinates)
-        time.sleep(0.01)
+                print(point_on_screen, "\t\t\t", pdf_coordinates)
+                visible_lines = update_visible_lines()
+                update_line_access(pdf_coordinates, visible_lines)
+        time.sleep(0.05)
 
-def capture_webcam_frames():
-    global frame
-    cap = cv2.VideoCapture(0)
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
-    cap.release()
-
-def convert_screen_to_pdf_coordinates(point_on_screen, page_rect, monitor_pixels):
-    screen_x, screen_y = point_on_screen
-    pdf_x = screen_x / monitor_pixels[0] * page_rect.width
-    pdf_y = screen_y / monitor_pixels[1] * page_rect.height
-    return pdf_x, pdf_y
-
-def update_line_access(pdf_coordinates):
+def update_line_access(pdf_coordinates, visible_lines):
     global current_line, new_lines_accessed, start_time
     x, y = pdf_coordinates
-    for i, line in enumerate(lines):
+    for i, line in enumerate(visible_lines):
         [page_num, x0, y0, x1, y1, text] = line
         if x0 <= x <= x1 and y0 <= y <= y1:
             if i != current_line:
@@ -105,6 +116,29 @@ def update_line_access(pdf_coordinates):
                         if t > threshold_time and j not in hard_lines:
                             hard_lines.append(j)
             break
+
+
+def capture_webcam_frames():
+    global frame
+    cap = cv2.VideoCapture(0)
+    fps = 60
+    delay = 1 / fps
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        time.sleep(delay)
+    
+    cap.release()
+
+
+def convert_screen_to_pdf_coordinates(point_on_screen, page_rect, monitor_pixels):
+    screen_x, screen_y = point_on_screen
+    pdf_x = screen_x / monitor_pixels[0] * page_rect.width
+    pdf_y = screen_y / monitor_pixels[1] * page_rect.height
+    return pdf_x, pdf_y
+
 
 def draw_gaze_point(point_on_screen):
     screen_x, screen_y = point_on_screen
@@ -159,7 +193,7 @@ def start_tracking(event=None):
         tracking = True
         tracking_thread = threading.Thread(target=update_gaze_tracking)
         tracking_thread.start()
-        threading.Thread(target=compute_gaze_points_per_minute).start()
+        # threading.Thread(target=compute_gaze_points_per_minute).start()
 
 def pause_tracking(event=None):
     global tracking

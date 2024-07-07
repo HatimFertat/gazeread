@@ -2,14 +2,18 @@ import collections
 import cv2
 import numpy as np
 import torch
+import time
 import mediapipe as mp
 from model import Model
 from albumentations import Compose, Normalize
 from albumentations.pytorch import ToTensorV2
 from mpii_face_gaze_preprocessing import normalize_single_image
-from utils import get_camera_matrix, get_face_landmarks_in_ccs, gaze_2d_to_3d, ray_plane_intersection,get_point_on_screen, get_monitor_dimensions,get_plane, calculate_bias_vector_and_plane
+from utils import get_camera_matrix, plane_equation, get_face_landmarks_in_ccs, gaze_2d_to_3d, ray_plane_intersection,get_point_on_screen, get_monitor_dimensions
 import os
+from utils import calculate_calibration,fit_screen_point_ridge,predict_screen_point_ridge
+import warnings
 
+warnings.filterwarnings("ignore", category=UserWarning, message=r'SymbolDatabase.GetPrototype\(\) is deprecated')
 
 class GazeTracker:
     def __init__(self, calibration_matrix_path, model_path):
@@ -38,8 +42,19 @@ class GazeTracker:
             min_detection_confidence=gpu_options['min_detection_confidence'],
             min_tracking_confidence=gpu_options['min_tracking_confidence']
         )
-        self.bias, self.plane = calculate_bias_vector_and_plane("../gaze-data-collection/data/p00/data.csv",self.camera_matrix,self.dist_coefficients, self.model, self.face_mesh)
 
+        start= time.time()
+        csvpath = "../gaze-data-collection/data/p00/data.csv"
+        known_points,estimated_points = calculate_calibration(csvpath,calibration_matrix_path, self.face_mesh)
+        self.screen_point_calibrater = fit_screen_point_ridge(estimated_points, known_points)  
+        calib_time = time.time()-start
+        print(f'Calibration done in {calib_time:.2f}')  
+
+        # self.bias, self.plane = calculate_bias_vector_and_plane("../gaze-data-collection/data/p00/data.csv",self.camera_matrix,self.dist_coefficients, self.model, self.face_mesh)
+        plane = plane_equation(np.eye(3), np.asarray([[0], [0], [0]]))
+        # plane = get_plane("../gaze-data-collection/data/p00/data.csv",self.camera_matrix,self.dist_coefficients,self.face_mesh)
+        self.plane_w = plane[:3]
+        self.plane_b = plane[3]
 
         self.smoothing_buffer = collections.deque(maxlen=3)
         self.rvec_buffer = collections.deque(maxlen=3)
@@ -82,6 +97,10 @@ class GazeTracker:
             img_warped_right_eye, _, _ = normalize_single_image(image_rgb, self.rvec, None, right_eye_center, self.camera_matrix)
             img_warped_face, _, rotation_matrix = normalize_single_image(image_rgb, self.rvec, None, face_center, self.camera_matrix, is_eye=False)
 
+            plane = plane_equation(rotation_matrix, np.asarray([[0], [0], [0]]))
+            plane_w = plane[0:3]
+            plane_b = plane[3]
+
             transform = Compose([Normalize(), ToTensorV2()])
             person_idx = torch.Tensor([0]).unsqueeze(0).long().to(self.device)
             full_face_image = transform(image=img_warped_face)["image"].unsqueeze(0).float().to(self.device)
@@ -95,10 +114,14 @@ class GazeTracker:
             self.gaze_vector_buffer.append(gaze_vector)
             gaze_vector = np.asarray(self.gaze_vector_buffer).mean(axis=0)
 
-            plane_w = self.plane[:3]
-            plane_b = self.plane[3]
             result = ray_plane_intersection(face_center.reshape(3), gaze_vector, plane_w, plane_b)
             point_on_screen = get_point_on_screen(self.monitor_mm, self.monitor_pixels, result)
+
+            if self.screen_point_calibrater is not None: point_on_screen = predict_screen_point_ridge(self.screen_point_calibrater, [point_on_screen])[0]
+            point_on_screen = (int(point_on_screen[0]),int(point_on_screen[1]))
+
+            if self.screen_point_calibrater is not None: point_on_screen = predict_screen_point_ridge(self.screen_point_calibrater, [point_on_screen])[0]
+            point_on_screen = (int(point_on_screen[0]),int(point_on_screen[1]))
 
             return point_on_screen
         
