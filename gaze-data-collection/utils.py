@@ -128,7 +128,7 @@ def get_grid_positions(monitor_pixels: Tuple[int, int], rows: int = 5, cols: int
         (0, height - 1), (width - 1, height - 1)
     ]
     positions.extend(corners)
-
+    random.shuffle(positions)
     return positions
 
 

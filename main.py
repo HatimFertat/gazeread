@@ -184,7 +184,7 @@ def main(calibration_matrix_path: str, monitor_mm=None, monitor_pixels=None, mod
             print(f'FPS: {np.mean(fps_deque):5.2f}')
 
         # Add waitKey to handle window events
-        if cv2.waitKey(1) & 0xFF == ord('q'):
+        if (cv2.waitKey(1) & 0xFF == 27) or (cv2.waitKey(1) & 0xFF == ord('q')):
             break
 
     # Cleanup

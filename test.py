@@ -11,7 +11,13 @@ import threading
 import warnings
 
 warnings.filterwarnings("ignore", category=UserWarning, message=r'SymbolDatabase.GetPrototype\(\) is deprecated')
+
+def update_canvas_dimensions(event):
+    canvas.config(width=root.winfo_width(), height=root.winfo_height())
+    canvas.configure(yscrollcommand=scrollbar.set)
+
 root = tk.Tk()
+root.bind('<Configure>', update_canvas_dimensions)
 # root.attributes("-fullscreen", True)
 root.title("PDF Reader with Gaze Tracking")
 
@@ -63,6 +69,15 @@ def update_canvas(page_image):
     canvas.image = photo
     canvas.config(scrollregion=canvas.bbox(tk.ALL))
 
+    canvas.create_oval(5, 5, 15, 15, fill="blue", outline="blue")
+    print(f"Canvas dimensions: {canvas.winfo_width()}x{canvas.winfo_height()}")
+    print(f"Root window dimensions: {root.winfo_width()}x{root.winfo_height()}")
+    draw_grid(canvas)
+    return image_width, image_height, x_offset, y_offset
+
+
+
+
 def on_vertical_scroll(event):
     canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
     if tracking:
@@ -79,18 +94,27 @@ def update_visible_lines():
             visible_lines.append(line)
     return visible_lines
 
-def update_gaze_tracking():
+def update_gaze_tracking(image_width, image_height, x_offset, y_offset):
     global current_line, new_lines_accessed, start_time, frame, gaze_points_computed
     while tracking:
         if frame is not None:
             point_on_screen = gaze_tracker.process_frame(frame, face_model, face_model_all, landmarks_ids)
             gaze_points_computed += 1
             draw_gaze_point(point_on_screen)
-            pdf_coordinates = convert_screen_to_pdf_coordinates(point_on_screen, page_rect, monitor_pixels)
+            pdf_coordinates = convert_screen_to_pdf_coordinates(
+                point_on_screen, 
+                page_rect, 
+                monitor_pixels, 
+                canvas.winfo_width(), 
+                canvas.winfo_height(), 
+                image_width, 
+                image_width
+            )
             print(point_on_screen, "\t\t\t", pdf_coordinates)
             visible_lines = update_visible_lines()
             update_line_access(pdf_coordinates, visible_lines)
         time.sleep(0.05)
+
 
 def update_line_access(pdf_coordinates, visible_lines):
     global current_line, new_lines_accessed, start_time
@@ -126,11 +150,18 @@ def capture_webcam_frames():
             break
 
 
-def convert_screen_to_pdf_coordinates(point_on_screen, page_rect, monitor_pixels):
+def convert_screen_to_pdf_coordinates(point_on_screen, page_rect, monitor_pixels, canvas_width, canvas_height, pdf_width, pdf_height):
     screen_x, screen_y = point_on_screen
-    pdf_x = screen_x / monitor_pixels[0] * page_rect.width
-    pdf_y = screen_y / monitor_pixels[1] * page_rect.height
-    return pdf_x, pdf_y
+    # Calculate the offset if the PDF is centered within the canvas
+    canvas_offset_x = (canvas_width - pdf_width) // 4
+    canvas_offset_y = (canvas_height - pdf_height) // 4
+    
+    # Adjust screen coordinates by subtracting the offsets
+    adjusted_x = (screen_x - canvas_offset_x) / pdf_width * page_rect.width
+    adjusted_y = (screen_y - canvas_offset_y) / pdf_height * page_rect.height
+    
+    return adjusted_x, adjusted_y
+
 
 
 def draw_gaze_point(point_on_screen):
@@ -217,6 +248,20 @@ def compute_gaze_points_per_minute():
         print(f"Gaze points per minute: {gaze_points_computed}")
         gaze_points_computed = 0
 
+def draw_grid(canvas):
+    interval = 50  # Change as needed for more or less granularity
+    width = canvas.winfo_width()
+    height = canvas.winfo_height()
+    # Vertical lines
+    for x in range(0, width, interval):
+        canvas.create_line(x, 0, x, height, fill='gray')
+    # Horizontal lines
+    for y in range(0, height, interval):
+        canvas.create_line(0, y, width, y, fill='gray')
+
+# Call this function after the canvas is set up and possibly again after any resize
+
+
 lines = []
 line_times = {}
 current_line = -1
@@ -238,7 +283,9 @@ canvas.bind_all("<MouseWheel>", on_vertical_scroll)
 root.bind('s', start_tracking)
 root.bind('p', pause_tracking)
 root.bind('<Escape>', stop_tracking)
-draw_gaze_point((10,10))
+# draw_gaze_point((10,10))
+print('Canvas size:', canvas.winfo_width(), canvas.winfo_height())
+print('Screen size:', root.winfo_screenwidth(), root.winfo_screenheight())
 
 menu = tk.Menu(root)
 root.config(menu=menu)

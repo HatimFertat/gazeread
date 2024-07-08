@@ -40,7 +40,7 @@ def main(base_path: str, monitor_mm=None, monitor_pixels=None):
             combined_data.to_csv(f'{base_path}/fulldata.csv', index=False)
 
 
-        if cv2.waitKey(500) & 0xFF == ord('q'):
+        if cv2.waitKey(500) & 0xFF == 27:  # 27 is the ASCII code for the Escape key
             cv2.destroyAllWindows()
             break
 
