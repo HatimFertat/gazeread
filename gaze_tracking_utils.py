@@ -10,13 +10,13 @@ from albumentations.pytorch import ToTensorV2
 from mpii_face_gaze_preprocessing import normalize_single_image
 from utils import get_camera_matrix, plane_equation, get_face_landmarks_in_ccs, gaze_2d_to_3d, ray_plane_intersection,get_point_on_screen, get_monitor_dimensions
 import os
-from utils import calculate_calibration,fit_screen_point_ridge,predict_screen_point_ridge
+from utils import calculate_calibration,fit_screen_point,predict_screen_point
 import warnings
 
 warnings.filterwarnings("ignore", category=UserWarning, message=r'SymbolDatabase.GetPrototype\(\) is deprecated')
 
 class GazeTracker:
-    def __init__(self, calibration_matrix_path, model_path):
+    def __init__(self, calibration_matrix_path, model_path, method):
         print("Initializing GazeTracker...")  # Debugging print statement
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.monitor_mm, self.monitor_pixels = get_monitor_dimensions()
@@ -42,11 +42,13 @@ class GazeTracker:
             min_detection_confidence=gpu_options['min_detection_confidence'],
             min_tracking_confidence=gpu_options['min_tracking_confidence']
         )
+        # face_mesh = mp.solutions.face_mesh.FaceMesh(static_image_mode=False, max_num_faces=1)
+        self.method = method
 
         start= time.time()
         csvpath = "../gaze-data-collection/data/p00/data.csv"
         known_points,estimated_points = calculate_calibration(csvpath,calibration_matrix_path, self.face_mesh)
-        self.screen_point_calibrater = fit_screen_point_ridge(estimated_points, known_points)  
+        self.screen_point_calibrater = fit_screen_point(estimated_points, known_points, self.method)  
         calib_time = time.time()-start
         print(f'Calibration done in {calib_time:.2f}')  
 
@@ -117,10 +119,7 @@ class GazeTracker:
             result = ray_plane_intersection(face_center.reshape(3), gaze_vector, plane_w, plane_b)
             point_on_screen = get_point_on_screen(self.monitor_mm, self.monitor_pixels, result)
 
-            if self.screen_point_calibrater is not None: point_on_screen = predict_screen_point_ridge(self.screen_point_calibrater, [point_on_screen])[0]
-            point_on_screen = (int(point_on_screen[0]),int(point_on_screen[1]))
-
-            if self.screen_point_calibrater is not None: point_on_screen = predict_screen_point_ridge(self.screen_point_calibrater, [point_on_screen])[0]
+            if self.screen_point_calibrater is not None: point_on_screen = predict_screen_point(self.screen_point_calibrater, [point_on_screen],self.method)[0]
             point_on_screen = (int(point_on_screen[0]),int(point_on_screen[1]))
 
             return point_on_screen

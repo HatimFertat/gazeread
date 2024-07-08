@@ -4,8 +4,8 @@ from PIL import Image, ImageTk, ImageDraw
 import time
 from utils import get_monitor_dimensions
 from gaze_tracking_utils import GazeTracker
-from face_model_array import face_model_all
 import cv2
+from webcam import WebcamSource
 import numpy as np
 import threading
 import warnings
@@ -18,12 +18,13 @@ root.title("PDF Reader with Gaze Tracking")
 calibration_matrix_path="./calibration_matrix.yaml"
 pdf_document = None
 current_page = 0
-gaze_tracker = GazeTracker(calibration_matrix_path, model_path="./p00.ckpt")
+gaze_tracker = GazeTracker(calibration_matrix_path, model_path="./p00.ckpt", method = 'affine')
 tracking = False
 tracking_thread = None
 capture_thread = None
 frame = None
 
+face_model_all = np.load("face_model.npy")
 face_model_all -= face_model_all[1]
 face_model_all *= np.array([1, -1, -1])
 face_model_all *= 10
@@ -31,10 +32,10 @@ face_model_all *= 10
 landmarks_ids = [33, 133, 362, 263, 61, 291, 1]
 face_model = np.asarray([face_model_all[i] for i in landmarks_ids])
 
+webcam_source = WebcamSource(width=1280, height=720, fps=25, buffer_size=10)
 
 
 monitor_mm, monitor_pixels = get_monitor_dimensions()
-
 def extract_lines_from_pdf(pdf_path):
     document = fitz.open(pdf_path)
     all_lines_data = []
@@ -63,7 +64,6 @@ def update_canvas(page_image):
     canvas.config(scrollregion=canvas.bbox(tk.ALL))
 
 def on_vertical_scroll(event):
-    # pause_tracking()
     canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
     if tracking:
         update_gaze_tracking()
@@ -84,13 +84,12 @@ def update_gaze_tracking():
     while tracking:
         if frame is not None:
             point_on_screen = gaze_tracker.process_frame(frame, face_model, face_model_all, landmarks_ids)
-            if point_on_screen:
-                gaze_points_computed += 1
-                draw_gaze_point(point_on_screen)
-                pdf_coordinates = convert_screen_to_pdf_coordinates(point_on_screen, page_rect, monitor_pixels)
-                print(point_on_screen, "\t\t\t", pdf_coordinates)
-                visible_lines = update_visible_lines()
-                update_line_access(pdf_coordinates, visible_lines)
+            gaze_points_computed += 1
+            draw_gaze_point(point_on_screen)
+            pdf_coordinates = convert_screen_to_pdf_coordinates(point_on_screen, page_rect, monitor_pixels)
+            print(point_on_screen, "\t\t\t", pdf_coordinates)
+            visible_lines = update_visible_lines()
+            update_line_access(pdf_coordinates, visible_lines)
         time.sleep(0.05)
 
 def update_line_access(pdf_coordinates, visible_lines):
@@ -120,17 +119,11 @@ def update_line_access(pdf_coordinates, visible_lines):
 
 def capture_webcam_frames():
     global frame
-    cap = cv2.VideoCapture(0)
-    fps = 60
-    delay = 1 / fps
-
     while True:
-        ret, frame = cap.read()
-        if not ret:
+        try:
+            frame = next(webcam_source)
+        except StopIteration:
             break
-        time.sleep(delay)
-    
-    cap.release()
 
 
 def convert_screen_to_pdf_coordinates(point_on_screen, page_rect, monitor_pixels):
@@ -234,6 +227,7 @@ canvas_height = 800
 gaze_points_computed = 0
 
 canvas = tk.Canvas(root, width=1280, height=canvas_height)
+# canvas = tk.Canvas(root)
 canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
 scrollbar = tk.Scrollbar(root, orient=tk.VERTICAL, command=canvas.yview)
@@ -244,6 +238,7 @@ canvas.bind_all("<MouseWheel>", on_vertical_scroll)
 root.bind('s', start_tracking)
 root.bind('p', pause_tracking)
 root.bind('<Escape>', stop_tracking)
+draw_gaze_point((10,10))
 
 menu = tk.Menu(root)
 root.config(menu=menu)

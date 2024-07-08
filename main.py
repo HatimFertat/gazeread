@@ -15,7 +15,7 @@ from utils import get_camera_matrix, get_face_landmarks_in_ccs, gaze_2d_to_3d, r
 from visualization import Plot3DScene
 from webcam import WebcamSource
 from calibrate_gaussian import calibrate_gaze_tracker
-from utils import calculate_calibration,fit_screen_point_ridge, predict_screen_point_ridge
+from utils import calculate_calibration,fit_screen_point, predict_screen_point
 
 # from face_model_array import face_model_all as fm
 face_model_all = np.load("face_model.npy")
@@ -33,8 +33,7 @@ WINDOW_NAME = 'laser pointer preview'
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-
-def main(calibration_matrix_path: str, monitor_mm=None, monitor_pixels=None, model=None, visualize_preprocessing=False, visualize_laser_pointer=True, visualize_3d=False, screen_point_calibrater=None):
+def main(calibration_matrix_path: str, monitor_mm=None, monitor_pixels=None, model=None, visualize_preprocessing=False, visualize_laser_pointer=True, visualize_3d=False, screen_point_calibrater=None, method='ridge'):
     # setup webcam
     source = WebcamSource(width=1280, height=720, fps=60, buffer_size=10)
     camera_matrix, dist_coefficients = get_camera_matrix(calibration_matrix_path)
@@ -155,7 +154,7 @@ def main(calibration_matrix_path: str, monitor_mm=None, monitor_pixels=None, mod
             point_on_screen = get_point_on_screen(monitor_mm, monitor_pixels, result)
 
             oldpt = point_on_screen
-            if screen_point_calibrater is not None: point_on_screen = predict_screen_point_ridge(screen_point_calibrater, [point_on_screen])[0]
+            if screen_point_calibrater is not None: point_on_screen = predict_screen_point(screen_point_calibrater, [point_on_screen], method)[0]
             point_on_screen = (int(point_on_screen[0]),int(point_on_screen[1]))
             # print(oldpt, point_on_screen)
             
@@ -204,6 +203,7 @@ if __name__ == '__main__':
     parser.add_argument("--visualize_3d", type=bool, default=False)
     parser.add_argument("--calibrate_gaze", action='store_true', default=False)
     parser.add_argument("--calibrate_screen_point", action='store_true', default=False)
+    parser.add_argument("--method", type=str, default='poly')
     args = parser.parse_args()
 
     if args.monitor_mm is not None:
@@ -223,13 +223,17 @@ if __name__ == '__main__':
         face_mesh = mp.solutions.face_mesh.FaceMesh(static_image_mode=False, max_num_faces=1)
 
         known_points,estimated_points = calculate_calibration(csvpath,args.calibration_matrix_path,face_mesh)
-        screen_point_gp, screen_point_scaler_x, screen_point_scaler_y = fit_screen_point_ridge(estimated_points, known_points)   
-        screen_point_calibrater = [screen_point_gp, screen_point_scaler_x, screen_point_scaler_y]
+        if args.method == 'poly' or args.method == 'tps':
+            poly_reg, poly, screen_point_scaler_x, screen_point_scaler_y = fit_screen_point(estimated_points, known_points, method=args.method) 
+            screen_point_calibrater = [poly_reg, poly, screen_point_scaler_x, screen_point_scaler_y]
+        else:
+            screen_point_gp, screen_point_scaler_x, screen_point_scaler_y = fit_screen_point(estimated_points, known_points, method=args.method)   
+            screen_point_calibrater = [screen_point_gp, screen_point_scaler_x, screen_point_scaler_y]
         calib_time = time.time()-start
-        print(f'Calibration done in {calib_time:.2f}')           
+        print(f'Calibration done in {calib_time:.2f}')
 
     try:
-        main(args.calibration_matrix_path, args.monitor_mm, args.monitor_pixels, model, args.visualize_preprocessing, args.visualize_laser_pointer, args.visualize_3d, screen_point_calibrater)
+        main(args.calibration_matrix_path, args.monitor_mm, args.monitor_pixels, model, args.visualize_preprocessing, args.visualize_laser_pointer, args.visualize_3d, screen_point_calibrater, args.method)
 
     except KeyboardInterrupt:
         print("Interrupted by user")

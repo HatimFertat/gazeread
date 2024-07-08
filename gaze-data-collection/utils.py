@@ -78,7 +78,7 @@ def create_image(monitor_pixels: Tuple[int, int], center=(0, 0), circle_scale=1.
 
         img = img.transpose((1, 0, 2))
 
-    return img / 255, circle_scale * 0.8, end_animation_loop
+    return img / 255, circle_scale * 0.85, end_animation_loop
 
 def write_text_on_image(center: Tuple[int, int], circle_scale: float, img: np.ndarray, target: str):
     """

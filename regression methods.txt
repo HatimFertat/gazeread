@@ -1,0 +1,11 @@
+good
+affine
+poly 2 (vertically)
+ridge 0.1 best (1.0 too)
+
+mid:
+
+bad:
+tps (too noisy)
+knn
+gpr

@@ -13,7 +13,14 @@ import torch
 from model import Model
 from sklearn.linear_model import Ridge
 from sklearn.preprocessing import StandardScaler
-
+from sklearn.neighbors import KNeighborsRegressor
+from sklearn.preprocessing import StandardScaler
+import numpy as np
+from scipy.interpolate import Rbf
+from sklearn.preprocessing import PolynomialFeatures
+from sklearn.linear_model import LinearRegression
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C
 
 
 face_model_all = np.load("face_model.npy")
@@ -288,6 +295,143 @@ def calculate_calibration(csvpath, camera_matrix_path, face_mesh=None):
     # Ensure the bias tensor is on the same device as the model
     return known_points,estimated_points
 
+def fit_screen_point(screen_points_raw, screen_points_true, method, **kwargs):
+    if method == 'ridge':
+        return fit_screen_point_ridge(screen_points_raw, screen_points_true, **kwargs)
+    elif method == 'knn':
+        return fit_screen_point_knn(screen_points_raw, screen_points_true, **kwargs)
+    elif method == 'poly':
+        return fit_screen_point_poly(screen_points_raw, screen_points_true, **kwargs)
+    elif method == 'tps':
+        return fit_screen_point_tps(screen_points_raw, screen_points_true, **kwargs)
+    elif method == 'affine':
+        return fit_screen_point_affine(screen_points_raw, screen_points_true, **kwargs)
+    elif method == 'gpr':
+        return fit_screen_point_gpr(screen_points_raw, screen_points_true, **kwargs)
+    else:
+        raise ValueError(f"Unknown method: {method}")
+
+
+def predict_screen_point(screen_point_calibrater, screen_point, method):
+    if method == 'ridge':
+        return predict_screen_point_ridge(screen_point_calibrater, screen_point)
+    elif method == 'knn':
+        return predict_screen_point_knn(screen_point_calibrater, screen_point)
+    elif method == 'poly':
+        return predict_screen_point_poly(screen_point_calibrater, screen_point)
+    elif method == 'tps':
+        return predict_screen_point_tps(screen_point_calibrater, screen_point)
+    elif method == 'affine':
+        return predict_screen_point_affine(screen_point_calibrater, screen_point)
+    elif method == 'gpr':
+        return predict_screen_point_gpr(screen_point_calibrater, screen_point)
+    else:
+        raise ValueError(f"Unknown method: {method}")
+
+
+def fit_screen_point_gpr(screen_points_raw, screen_points_true):
+    scaler_x = StandardScaler().fit(screen_points_raw)
+    scaler_y = StandardScaler().fit(screen_points_true)
+    screen_points_raw_scaled = scaler_x.transform(screen_points_raw)
+    screen_points_true_scaled = scaler_y.transform(screen_points_true)
+
+    # Define the kernel for Gaussian Process
+    kernel = C(1.0, (1e-3, 1e3)) * RBF(1, (1e-2, 1e2))
+    gpr = GaussianProcessRegressor(kernel=kernel, n_restarts_optimizer=10)
+    gpr.fit(screen_points_raw_scaled, screen_points_true_scaled)
+    
+    return gpr, scaler_x, scaler_y
+
+def predict_screen_point_gpr(screen_point_calibrater, screen_point):
+    [gpr, scaler_x, scaler_y] = screen_point_calibrater
+    screen_point_scaled = scaler_x.transform(screen_point)
+    predicted_scaled = gpr.predict(screen_point_scaled)
+    return scaler_y.inverse_transform(predicted_scaled)
+
+
+def fit_screen_point_poly(screen_points_raw, screen_points_true, degree=2):
+    scaler_x = StandardScaler().fit(screen_points_raw)
+    scaler_y = StandardScaler().fit(screen_points_true)
+    screen_points_raw_scaled = scaler_x.transform(screen_points_raw)
+    screen_points_true_scaled = scaler_y.transform(screen_points_true)
+
+    poly = PolynomialFeatures(degree)
+    screen_points_raw_poly = poly.fit_transform(screen_points_raw_scaled)
+
+    poly_reg = LinearRegression()
+    poly_reg.fit(screen_points_raw_poly, screen_points_true_scaled)
+    
+    return poly_reg, poly, scaler_x, scaler_y
+
+def predict_screen_point_poly(screen_point_calibrater, screen_point):
+    [poly_reg, poly, scaler_x, scaler_y] = screen_point_calibrater
+    screen_point_scaled = scaler_x.transform(screen_point)
+    screen_point_poly = poly.transform(screen_point_scaled)
+    predicted_scaled = poly_reg.predict(screen_point_poly)
+    return scaler_y.inverse_transform(predicted_scaled)
+
+
+def fit_screen_point_knn(screen_points_raw, screen_points_true, n_neighbors=3):
+    scaler_x = StandardScaler().fit(screen_points_raw)
+    scaler_y = StandardScaler().fit(screen_points_true)
+    screen_points_raw_scaled = scaler_x.transform(screen_points_raw)
+    screen_points_true_scaled = scaler_y.transform(screen_points_true)
+
+    # Fit k-NN regression model
+    knn = KNeighborsRegressor(n_neighbors=n_neighbors)
+    knn.fit(screen_points_raw_scaled, screen_points_true_scaled)
+    
+    return knn, scaler_x, scaler_y
+
+def predict_screen_point_knn(screen_point_calibrater, screen_point):
+    [knn, scaler_x, scaler_y] = screen_point_calibrater
+    screen_point_scaled = scaler_x.transform(screen_point)
+    predicted_scaled = knn.predict(screen_point_scaled)
+    return scaler_y.inverse_transform(predicted_scaled)
+
+
+def fit_screen_point_tps(screen_points_raw, screen_points_true):
+    scaler_x = StandardScaler().fit(screen_points_raw)
+    scaler_y = StandardScaler().fit(screen_points_true)
+    screen_points_raw_scaled = scaler_x.transform(screen_points_raw)
+    screen_points_true_scaled = scaler_y.transform(screen_points_true)
+
+    tps_x = Rbf(screen_points_raw_scaled[:, 0], screen_points_raw_scaled[:, 1], screen_points_true_scaled[:, 0], function='thin_plate')
+    tps_y = Rbf(screen_points_raw_scaled[:, 0], screen_points_raw_scaled[:, 1], screen_points_true_scaled[:, 1], function='thin_plate')
+    
+    return (tps_x, tps_y, scaler_x, scaler_y)
+
+def predict_screen_point_tps(screen_point_calibrater, screen_point):
+    [tps_x, tps_y, scaler_x, scaler_y] = screen_point_calibrater
+    screen_point_scaled = scaler_x.transform(screen_point)
+    predicted_scaled_x = tps_x(screen_point_scaled[:, 0], screen_point_scaled[:, 1])
+    predicted_scaled_y = tps_y(screen_point_scaled[:, 0], screen_point_scaled[:, 1])
+    predicted_scaled = np.vstack((predicted_scaled_x, predicted_scaled_y)).T
+    return scaler_y.inverse_transform(predicted_scaled)
+
+
+def fit_screen_point_affine(screen_points_raw, screen_points_true):
+    scaler_x = StandardScaler().fit(screen_points_raw)
+    scaler_y = StandardScaler().fit(screen_points_true)
+    screen_points_raw_scaled = scaler_x.transform(screen_points_raw)
+    screen_points_true_scaled = scaler_y.transform(screen_points_true)
+
+    # Add a column of ones for the affine transformation
+    screen_points_raw_augmented = np.hstack([screen_points_raw_scaled, np.ones((screen_points_raw_scaled.shape[0], 1))])
+
+    affine_reg = LinearRegression(fit_intercept=False)
+    affine_reg.fit(screen_points_raw_augmented, screen_points_true_scaled)
+    
+    return (affine_reg, scaler_x, scaler_y)
+
+def predict_screen_point_affine(screen_point_calibrater, screen_point):
+    [affine_reg, scaler_x, scaler_y] = screen_point_calibrater
+    screen_point_scaled = scaler_x.transform(screen_point)
+    screen_point_augmented = np.hstack([screen_point_scaled, np.ones((screen_point_scaled.shape[0], 1))])
+    predicted_scaled = affine_reg.predict(screen_point_augmented)
+    return scaler_y.inverse_transform(predicted_scaled)
+
+
 def fit_screen_point_ridge(screen_points_raw, screen_points_true):
     scaler_x = StandardScaler().fit(screen_points_raw)
     scaler_y = StandardScaler().fit(screen_points_true)
@@ -295,7 +439,7 @@ def fit_screen_point_ridge(screen_points_raw, screen_points_true):
     screen_points_true_scaled = scaler_y.transform(screen_points_true)
 
     # Fit Ridge regression model
-    ridge = Ridge(alpha=1.0)
+    ridge = Ridge(alpha = 0.1)
     ridge.fit(screen_points_raw_scaled, screen_points_true_scaled)
     
     return ridge, scaler_x, scaler_y
@@ -326,6 +470,8 @@ if __name__ == '__main__':
         min_detection_confidence=gpu_options['min_detection_confidence'],
         min_tracking_confidence=gpu_options['min_tracking_confidence']
     )
+    # face_mesh = mp.solutions.face_mesh.FaceMesh(static_image_mode=False, max_num_faces=1)
+
     camera_matrix, dist_coeffs = get_camera_matrix('./calibration_matrix.yaml')
     model = Model().to(device)
     checkpoint = torch.load('p00.ckpt')
