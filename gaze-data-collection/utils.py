@@ -78,7 +78,7 @@ def create_image(monitor_pixels: Tuple[int, int], center=(0, 0), circle_scale=1.
 
         img = img.transpose((1, 0, 2))
 
-    return img / 255, circle_scale * 0.9, end_animation_loop
+    return img / 255, circle_scale * 0.8, end_animation_loop
 
 def write_text_on_image(center: Tuple[int, int], circle_scale: float, img: np.ndarray, target: str):
     """
@@ -104,7 +104,8 @@ def write_text_on_image(center: Tuple[int, int], circle_scale: float, img: np.nd
 
 def get_grid_positions(monitor_pixels: Tuple[int, int], rows: int = 5, cols: int = 5) -> list:
     """
-    Get grid positions on monitor including corners, ignoring the left and right vertical strips (25% of the screen on each side).
+    Get grid positions on monitor including corners, starting and ending at the screen edge vertically
+    and at the effective width's edge horizontally.
 
     :param monitor_pixels: monitor dimensions in pixels
     :param rows: number of rows in the grid
@@ -113,24 +114,25 @@ def get_grid_positions(monitor_pixels: Tuple[int, int], rows: int = 5, cols: int
     """
     width, height = monitor_pixels
 
-    # Calculate the effective width after ignoring 25% on each side
-    effective_width = width * 1.0
-    x_start = width * 0.0  # Start at 25% of the width
-    x_spacing = effective_width // (cols + 1)
-    y_spacing = height // (rows + 1)
+    # Calculate the effective width after ignoring 20% on each side
+    effective_width = width * 0.6
+    x_start = width * 0.2  # Start at 20% of the width
+    x_spacing = effective_width // (cols - 1)  # Ensure it starts and ends at the effective width's edge
+    y_spacing = height // (rows - 1)  # Ensure it starts and ends at the screen edge
 
-    positions = [(int(x_start + x * x_spacing), int(y * y_spacing)) for x in range(1, cols + 1) for y in range(1, rows + 1)]
+    positions = [(int(x_start + x * x_spacing), int(y * y_spacing)) for x in range(cols) for y in range(rows)]
 
-    # Adding corners
-    # corners = [(x_start, 0), (x_start + effective_width - 1, 0), (x_start, height - 1), (x_start + effective_width - 1, height - 1)]
-    corners = [(10, 10), (width - 10, 0), (0, height - 10), (width - 10, height - 10)]
-    corners = [(int(x[0]),int(x[1])) for x in corners]
+    # Adding corners (ensuring they are exactly at the edges)
+    corners = [
+        (0, 0), (width - 1, 0),
+        (0, height - 1), (width - 1, height - 1)
+    ]
     positions.extend(corners)
 
-    random.shuffle(positions)
     return positions
 
-def show_point_on_screen(window_name: str, base_path: str, monitor_pixels: Tuple[int, int], source: WebcamSource) -> Tuple[str, Tuple[int, int], float]:
+
+def show_point_on_screen(window_name: str, base_path: str, monitor_pixels: Tuple[int, int], source: WebcamSource, index: int) -> Tuple[str, Tuple[int, int], float, int]:
     """
     Show one target on screen, full animation cycle. Return collected data if data is valid
 
@@ -142,15 +144,16 @@ def show_point_on_screen(window_name: str, base_path: str, monitor_pixels: Tuple
     """
     circle_scale = 1.
     grid_positions = get_grid_positions(monitor_pixels, 8,5)
+    if index == 0: print(grid_positions)
+    
     end_animation_loop = False
     orientation = random.choice(list(TargetOrientation))
 
     file_name = None
     time_till_capture = None
-    i = 0
 
     while not end_animation_loop:
-        center = grid_positions[i]
+        center = grid_positions[index]
         image, circle_scale, end_animation_loop = create_image(monitor_pixels, center, circle_scale, orientation)
         cv2.imshow(window_name, image)
 
@@ -160,7 +163,7 @@ def show_point_on_screen(window_name: str, base_path: str, monitor_pixels: Tuple
                 sys.exit()
     
     if end_animation_loop:
-        i += 1
+        index = (index + 1) % len(grid_positions)
         file_name = datetime.now().strftime("%Y_%m_%d-%H_%M_%S")
         start_time_color_change = time.time()
 
@@ -178,4 +181,4 @@ def show_point_on_screen(window_name: str, base_path: str, monitor_pixels: Tuple
         end_animation_loop = False
         circle_scale = 1.  # Reset circle scale for next point
 
-    return f'{file_name}.jpg', center, time_till_capture
+    return f'{file_name}.jpg', center, time_till_capture, index

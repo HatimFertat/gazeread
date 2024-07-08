@@ -25,9 +25,10 @@ def main(base_path: str, monitor_mm=None, monitor_pixels=None):
     cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_NORMAL)
     cv2.setWindowProperty(WINDOW_NAME, cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
 
+    index = 0
     collected_data = defaultdict(list)
     while True:
-        file_name, center, time_till_capture = show_point_on_screen(WINDOW_NAME, base_path, monitor_pixels, source)
+        file_name, center, time_till_capture, index = show_point_on_screen(WINDOW_NAME, base_path, monitor_pixels, source, index)
         if file_name is not None and time_till_capture is not None:
             print(file_name)
             collected_data['file_name'].append(file_name)
@@ -35,7 +36,9 @@ def main(base_path: str, monitor_mm=None, monitor_pixels=None):
             collected_data['time_till_capture'].append(round(time_till_capture, 4))
             
             existing_data = pd.read_csv(f'{base_path}/fulldata.csv') if pathlib.Path(f'{base_path}/fulldata.csv').exists() else pd.DataFrame()
-            pd.concat([existing_data, pd.DataFrame(collected_data)]).to_csv(f'{base_path}/fulldata.csv', index=False)
+            combined_data = pd.concat([existing_data, pd.DataFrame(collected_data)]).drop_duplicates()
+            combined_data.to_csv(f'{base_path}/fulldata.csv', index=False)
+
 
         if cv2.waitKey(500) & 0xFF == ord('q'):
             cv2.destroyAllWindows()
