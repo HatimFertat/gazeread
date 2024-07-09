@@ -4,8 +4,8 @@ import cv2
 import mediapipe as mp
 from typing import Tuple
 import yaml
-from face_model_array import face_model_all
 
+face_model_all = np.load("face_model.npy")
 face_model_all -= face_model_all[1]
 face_model_all *= np.array([1, -1, -1])
 face_model_all *= 10

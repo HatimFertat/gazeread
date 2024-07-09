@@ -17,7 +17,6 @@ from webcam import WebcamSource
 from calibrate_gaussian import calibrate_gaze_tracker
 from utils import calculate_calibration,fit_screen_point, predict_screen_point
 
-# from face_model_array import face_model_all as fm
 face_model_all = np.load("face_model.npy")
 
 # face model from https://github.com/google/mediapipe/blob/master/mediapipe/modules/face_geometry/data/canonical_face_model.obj
