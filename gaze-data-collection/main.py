@@ -35,9 +35,16 @@ def main(base_path: str, monitor_mm=None, monitor_pixels=None):
             collected_data['point_on_screen'].append(center)
             collected_data['time_till_capture'].append(round(time_till_capture, 4))
             
-            existing_data = pd.read_csv(f'{base_path}/fulldata.csv') if pathlib.Path(f'{base_path}/fulldata.csv').exists() else pd.DataFrame()
+            #create data.csv file
+
+            #If you want to combine with previously acquired data
+            # existing_data = pd.read_csv(f'{base_path}/data.csv') if pathlib.Path(f'{base_path}/data.csv').exists() else pd.DataFrame()
+            
+            #Ignore previous data
+            existing_data = pd.DataFrame()
+            
             combined_data = pd.concat([existing_data, pd.DataFrame(collected_data)]).drop_duplicates()
-            combined_data.to_csv(f'{base_path}/fulldata.csv', index=False)
+            combined_data.to_csv(f'{base_path}/data.csv', index=False)
 
 
         if cv2.waitKey(500) & 0xFF == 27:  # 27 is the ASCII code for the Escape key

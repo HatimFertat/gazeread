@@ -37,9 +37,9 @@ TEXT_SCALE = 0.5
 TEXT_THICKNESS = 2
 
 class TargetOrientation(Enum):
-    UP = ord('z')
-    DOWN = ord('s')
-    LEFT = ord('q')
+    UP = ord('w')
+    DOWN = ord('a')
+    LEFT = ord('s')
     RIGHT = ord('d')
 
 def create_image(monitor_pixels: Tuple[int, int], center=(0, 0), circle_scale=1., orientation=TargetOrientation.RIGHT, target='E') -> Tuple[np.ndarray, float, bool]:
@@ -143,7 +143,9 @@ def show_point_on_screen(window_name: str, base_path: str, monitor_pixels: Tuple
     :return: collected data otherwise None
     """
     circle_scale = 1.
-    grid_positions = get_grid_positions(monitor_pixels, 8,5)
+    rows, cols = 8, 5
+    N = (rows * cols) + 4 # number of points in grid_positions
+    grid_positions = get_grid_positions(monitor_pixels, rows,cols)
     if index == 0: print(grid_positions)
     
     end_animation_loop = False
@@ -162,8 +164,8 @@ def show_point_on_screen(window_name: str, base_path: str, monitor_pixels: Tuple
                 cv2.destroyAllWindows()
                 sys.exit()
     
-    if end_animation_loop:
-        index = (index + 1) % len(grid_positions)
+    if index < N or end_animation_loop:
+        index = (index + 1) # can add '% len(grid_positions)' if you want to loop indefinitely until you press ESC
         file_name = datetime.now().strftime("%Y_%m_%d-%H_%M_%S")
         start_time_color_change = time.time()
 

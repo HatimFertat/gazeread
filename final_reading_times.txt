@@ -1,15 +1,7 @@
-Line 4: modern Western literature and art
-penetrates, whether the farmer in - Time spent: 1.91 seconds
-Line 5: his village has any better understanding of Goethe
-or Manet than his - Time spent: 1.68 seconds
-Line 7: education has brought with it a profound respect for Western culture, - Time spent: 0.52 seconds
-Line 9: This feeling has often been indiscriminate and led to a - Time spent: 0.54 seconds
-Line 12: has led to many of the changes so deplored by
-the foreign visitor. - Time spent: 0.67 seconds
-Line 13: The Japanese woman who abandons the traditional kimono in favor - Time spent: 0.51 seconds
-Line 14: of a dress is not merely imitating some Hollywood star; she is - Time spent: 0.53 seconds
-Line 18: Even if she would like
-nothing better than to wear a kimono every - Time spent: 0.68 seconds
-Line 20: luxury which few can afford unless they have
-inherited them. - Time spent: 0.52 seconds
-Line 26: with the family are losing ground. Divorce, for example, is now - Time spent: 0.76 seconds
+Line 13: The Japanese woman who abandons the traditional kimono in favor - Time spent: 0.53 seconds
+Line 15: liberating herself
+from the nuisance of the elaborate series of robes - Time spent: 0.67 seconds
+Line 22: and
+ economic necessity dictate. Underneath the surface, at an - Time spent: 9.75 seconds
+Line 25: especially in the larger cities, and the traditional values
+associated - Time spent: 0.59 seconds

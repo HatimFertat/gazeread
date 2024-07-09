@@ -1587,3 +1587,102 @@ penetrates, whether the farmer in' - Time spent: 1.91 seconds
 Line 5: 'his village has any better understanding of Goethe
 or Manet than his' - Time spent: 1.68 seconds
 Line 7: 'education has brought with it a profound respect for Western culture,' - Time spent: 0.52 seconds
+Line 12: 'has led to many of the changes so deplored by
+the foreign visitor.' - Time spent: 0.63 seconds
+Line 12: 'has led to many of the changes so deplored by
+the foreign visitor.' - Time spent: 1.17 seconds
+Line 14: 'of a dress is not merely imitating some Hollywood star; she is' - Time spent: 0.58 seconds
+Line 14: 'of a dress is not merely imitating some Hollywood star; she is' - Time spent: 1.09 seconds
+Line 14: 'of a dress is not merely imitating some Hollywood star; she is' - Time spent: 1.63 seconds
+Line 12: 'has led to many of the changes so deplored by
+the foreign visitor.' - Time spent: 2.40 seconds
+Line 13: 'The Japanese woman who abandons the traditional kimono in favor' - Time spent: 0.51 seconds
+Line 16: 'and underrobes, unbearably hot in summer and impractical at any' - Time spent: 0.54 seconds
+Line 7: 'education has brought with it a profound respect for Western culture,' - Time spent: 3.32 seconds
+Line 10: 'defacement
+ of the Japanese landscape which we may find all but' - Time spent: 0.51 seconds
+Line 12: 'has led to many of the changes so deplored by
+the foreign visitor.' - Time spent: 0.53 seconds
+Line 12: 'has led to many of the changes so deplored by
+the foreign visitor.' - Time spent: 1.05 seconds
+Line 13: 'The Japanese woman who abandons the traditional kimono in favor' - Time spent: 1.14 seconds
+Line 11: 'unpardonable, but it has not
+been only adulation for the West which' - Time spent: 0.65 seconds
+Line 15: 'liberating herself
+from the nuisance of the elaborate series of robes' - Time spent: 0.55 seconds
+Line 16: 'and underrobes, unbearably hot in summer and impractical at any' - Time spent: 0.51 seconds
+Line 16: 'and underrobes, unbearably hot in summer and impractical at any' - Time spent: 1.10 seconds
+Line 17: 'time of
+the year in the offices and busses she must cope with today.' - Time spent: 0.62 seconds
+Line 10: 'defacement
+ of the Japanese landscape which we may find all but' - Time spent: 0.53 seconds
+Line 10: 'defacement
+ of the Japanese landscape which we may find all but' - Time spent: 1.10 seconds
+Line 9: 'This feeling has often been indiscriminate and led to a' - Time spent: 0.54 seconds
+Line 9: 'This feeling has often been indiscriminate and led to a' - Time spent: 1.11 seconds
+Line 11: 'unpardonable, but it has not
+been only adulation for the West which' - Time spent: 1.23 seconds
+Line 10: 'defacement
+ of the Japanese landscape which we may find all but' - Time spent: 1.94 seconds
+Line 13: 'The Japanese woman who abandons the traditional kimono in favor' - Time spent: 0.56 seconds
+Line 23: 'undeniably slower pace,
+the moral and spiritual life of the country is' - Time spent: 2.87 seconds
+Line 23: 'undeniably slower pace,
+the moral and spiritual life of the country is' - Time spent: 3.46 seconds
+Line 22: 'and
+ economic necessity dictate. Underneath the surface, at an' - Time spent: 0.52 seconds
+Line 21: 'The face of Japan is changing every day as taste, convenience,' - Time spent: 0.52 seconds
+Line 8: 'and sometimes
+a genuine love.' - Time spent: 2.83 seconds
+Line 6: 'grandfather did. The fact remains that almost everywhere in Japan' - Time spent: 0.52 seconds
+Line 9: 'This feeling has often been indiscriminate and led to a' - Time spent: 2.22 seconds
+Line 10: 'defacement
+ of the Japanese landscape which we may find all but' - Time spent: 2.46 seconds
+Line 13: 'The Japanese woman who abandons the traditional kimono in favor' - Time spent: 1.25 seconds
+Line 16: 'and underrobes, unbearably hot in summer and impractical at any' - Time spent: 1.31 seconds
+Line 20: 'luxury which few can afford unless they have
+inherited them.' - Time spent: 0.67 seconds
+Line 13: 'The Japanese woman who abandons the traditional kimono in favor' - Time spent: 1.77 seconds
+Line 12: 'has led to many of the changes so deplored by
+the foreign visitor.' - Time spent: 0.58 seconds
+Line 18: 'Even if she would like
+nothing better than to wear a kimono every' - Time spent: 1.71 seconds
+Line 13: 'The Japanese woman who abandons the traditional kimono in favor' - Time spent: 5.11 seconds
+Line 4: 'modern Western literature and art
+penetrates, whether the farmer in' - Time spent: 17.06 seconds
+Line 0: 'where students gather to listen to records of Beethoven
+and Brahms,' - Time spent: 1.01 seconds
+Line 17: 'time of
+the year in the offices and busses she must cope with today.' - Time spent: 5.94 seconds
+Line 13: 'The Japanese woman who abandons the traditional kimono in favor' - Time spent: 0.50 seconds
+Line 15: 'liberating herself
+from the nuisance of the elaborate series of robes' - Time spent: 0.52 seconds
+Line 22: 'and
+ economic necessity dictate. Underneath the surface, at an' - Time spent: 0.55 seconds
+Line 6: 'grandfather did. The fact remains that almost everywhere in Japan' - Time spent: 14.26 seconds
+Line 5: 'his village has any better understanding of Goethe
+or Manet than his' - Time spent: 0.56 seconds
+Line 2: 'all
+ over the country with excellent reproductions of Renoir, Van' - Time spent: 0.62 seconds
+Line 7: 'education has brought with it a profound respect for Western culture,' - Time spent: 0.58 seconds
+Line 1: 'if not of Debussy and Stravinsky. Even the banks send out calendars' - Time spent: 1.94 seconds
+Line 8: 'and sometimes
+a genuine love.' - Time spent: 1.78 seconds
+Line 10: 'defacement
+ of the Japanese landscape which we may find all but' - Time spent: 0.74 seconds
+Line 14: 'of a dress is not merely imitating some Hollywood star; she is' - Time spent: 0.56 seconds
+Line 6: 'grandfather did. The fact remains that almost everywhere in Japan' - Time spent: 1.66 seconds
+Line 2: 'all
+ over the country with excellent reproductions of Renoir, Van' - Time spent: 0.52 seconds
+Line 4: 'modern Western literature and art
+penetrates, whether the farmer in' - Time spent: 1.42 seconds
+Line 1: 'if not of Debussy and Stravinsky. Even the banks send out calendars' - Time spent: 0.57 seconds
+Line 22: 'and
+ economic necessity dictate. Underneath the surface, at an' - Time spent: 5.04 seconds
+Line 25: 'especially in the larger cities, and the traditional values
+associated' - Time spent: 0.59 seconds
+Line 22: 'and
+ economic necessity dictate. Underneath the surface, at an' - Time spent: 9.75 seconds
+Line 13: 'The Japanese woman who abandons the traditional kimono in favor' - Time spent: 0.53 seconds
+Line 15: 'liberating herself
+from the nuisance of the elaborate series of robes' - Time spent: 0.67 seconds
