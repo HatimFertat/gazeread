@@ -14,7 +14,6 @@ from mpii_face_gaze_preprocessing import normalize_single_image
 from utils import get_camera_matrix, get_face_landmarks_in_ccs, gaze_2d_to_3d, ray_plane_intersection, plane_equation, get_monitor_dimensions, get_point_on_screen
 from visualization import Plot3DScene
 from webcam import WebcamSource
-from calibrate_gaussian import calibrate_gaze_tracker
 from utils import calculate_calibration,fit_screen_point, predict_screen_point
 
 face_model_all = np.load("face_model.npy")
