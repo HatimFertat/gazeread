@@ -1,5 +1,5 @@
 # gazeread
-reading assistant using gaze tracking data
+reading assistant using gaze tracking data and LLM summarization
 
 original github: https://github.com/pperle/gaze-tracking-pipeline
 
