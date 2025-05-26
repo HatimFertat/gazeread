@@ -10,6 +10,7 @@ from ..eye_tracking.tracker import EyeTracker, FilterType
 from ..pdf.document import PDFDocument
 from ..ai.assistant import AIAssistant
 import logging
+import re
 
 #
 
@@ -21,22 +22,123 @@ class GazeIndicator(QWidget):
         self.gaze_point = None
         self.text_label = None  # Reference to the text label for scaling
         self.logger = logging.getLogger(__name__)  # Add logger
-        
+        # PDF page size in points (will be set by MainWindow)
+        self.pdf_width_pt: float | None = None
+        self.pdf_height_pt: float | None = None
+        # Reference to the scroll area for offset compensation
+        self.scroll_area = None
+        # Raw PDF line bounding boxes (list of (x0, y0, x1, y1))
+        self.pdf_bboxes: list[tuple[float, float, float, float]] = []
+        # Extents for content area in PDF coords
+        self._pdf_x_min: float | None = None
+        self._pdf_x_max: float | None = None
+        self._pdf_y_min: float | None = None
+        self._pdf_y_max: float | None = None
+    def set_pdf_line_boxes(self, boxes: list[tuple[float, float, float, float]]):
+        """Store raw PDF line bounding boxes and memoise extents."""
+        self.pdf_bboxes = boxes
+        if boxes:
+            xs0, ys0, xs1, ys1 = zip(*boxes)
+            self._pdf_x_min = min(xs0)
+            self._pdf_x_max = max(xs1)
+            self._pdf_y_min = min(ys0)
+            self._pdf_y_max = max(ys1)
+        else:
+            self._pdf_x_min = self._pdf_x_max = None
+            self._pdf_y_min = self._pdf_y_max = None
+        self.update()
+
     def set_text_label(self, label):
         """Set the reference to the text label for proper scaling."""
         self.text_label = label
-        
+
+    def set_scroll_area(self, scroll_area):
+        """Store scroll area reference so we can subtract viewport offsets."""
+        self.scroll_area = scroll_area
+
+    def set_pdf_page_size(self, width_pt: float, height_pt: float):
+        """Store the current PDF page’s width/height in points."""
+        self.pdf_width_pt = width_pt
+        self.pdf_height_pt = height_pt
+
     def set_gaze_point(self, x: int, y: int):
         # Convert global screen coordinates to widget-local coordinates
         local_pt = self.mapFromGlobal(QPoint(x, y))
         self.gaze_point = (local_pt.x(), local_pt.y())
         self.update()
 
+    def transform_pdf_bbox(self, bbox: tuple[float, float, float, float]) -> QRect:
+        """
+        Map a PDF bbox (x0, y0, x1, y1) in points to a QRect in the
+        GazeIndicator’s local widget coordinates, honouring font size,
+        QLabel padding, layout margins, and HiDPI scaling.
+        """
+        if not (self.pdf_width_pt and self.pdf_height_pt and self.text_label):
+            return QRect()  # not yet initialised
+
+        x0, y0, x1, y1 = bbox
+
+        # 2) Extract padding from style sheet (“padding: <tb>px <lr>px”)
+        pad_tb = pad_lr = 0
+        ss = self.text_label.styleSheet()
+        m = re.search(r'padding:\s*(\d+)px\s+(\d+)px', ss)
+        if m:
+            pad_tb = int(m.group(1))
+            pad_lr = int(m.group(2))
+
+        # 3) Layout margins (content_layout) – parent of QLabel is content_widget
+        margins = self.text_label.parentWidget().layout().contentsMargins()
+
+        # Use QLabel's inner content rectangle (excludes padding and border)
+        inner_rect = self.text_label.contentsRect()
+
+        # 5) Derive content extents; fall back to full page
+        x_min = self._pdf_x_min if self._pdf_x_min is not None else 0
+        x_max = self._pdf_x_max if self._pdf_x_max is not None else self.pdf_width_pt
+        y_min = self._pdf_y_min if self._pdf_y_min is not None else 0
+        y_max = self._pdf_y_max if self._pdf_y_max is not None else self.pdf_height_pt
+
+        usable_width_px = inner_rect.width()
+        usable_height_px = inner_rect.height()
+
+        # Map the top‑left of the inner rect to this widget’s coordinate system (across unrelated widgets)
+        global_inner_top_left = self.text_label.mapToGlobal(inner_rect.topLeft())
+        label_inner_pos = self.mapFromGlobal(global_inner_top_left)
+
+        # guard against division by zero
+        span_x = max(x_max - x_min, 1e-3)
+        span_y = max(y_max - y_min, 1e-3)
+
+        scale_x = usable_width_px / span_x
+        scale_y = usable_height_px / span_y
+
+        # 6) Convert bbox → px (Qt origin top‑left)
+        qt_x = (x0 - x_min) * scale_x
+        qt_y_top = (y_max - y1) * scale_y
+        qt_w = (x1 - x0) * scale_x
+        qt_h = (y1 - y0) * scale_y
+
+        # 7) Aggregate all offsets
+        final_x = label_inner_pos.x() + int(qt_x)
+        final_y = label_inner_pos.y() + int(qt_y_top)
+
+        return QRect(int(final_x), int(final_y), int(qt_w), int(qt_h))
+
     def paintEvent(self, event):
-        """Draw a red dot at the gaze point when available."""
+        """Draw PDF line boxes and a red dot at the gaze point when available."""
         if not self.gaze_point:
             return
         painter = QPainter(self)
+        # Draw all PDF line boxes
+        rect_pen = QPen()
+        rect_pen.setWidth(2)
+        rect_pen.setColor(QColor(0, 255, 0))
+        painter.setPen(rect_pen)
+        for bbox in self.pdf_bboxes:
+            rect = self.transform_pdf_bbox(bbox)
+            if rect.isValid():
+                painter.drawRect(rect)
+        # Now draw gaze dot
         pen = QPen()
         pen.setWidth(10)
         pen.setColor(QColor(255, 0, 0))
@@ -171,6 +273,7 @@ class MainWindow(QMainWindow):
         self.gaze_indicator = GazeIndicator(self.centralWidget())
         self.gaze_indicator.setGeometry(self.centralWidget().rect())
         self.gaze_indicator.set_text_label(self.text_label)  # Set the text label reference
+        self.gaze_indicator.set_scroll_area(self.scroll_area)
         self.gaze_indicator.raise_()  # Ensure the gaze indicator stays on top
         
         # Removed resize event patching for text lines
@@ -276,13 +379,30 @@ class MainWindow(QMainWindow):
     def display_current_page(self):
         if not self.pdf_document:
             return
-            
+
         text = self.pdf_document.get_page_text(self.current_page)
         if not text:
             self.logger.warning(f"No text content found on page {self.current_page}")
             self.text_label.setText("No text content found on this page.")
             return
-            
+
+        # Inform gaze indicator about current PDF page size
+        try:
+            pdf_w_pt, pdf_h_pt = self.pdf_document.get_page_size(self.current_page)
+            self.gaze_indicator.set_pdf_page_size(pdf_w_pt, pdf_h_pt)
+        except AttributeError:
+            # Fallback to typical A4 size if PDFDocument lacks explicit API
+            self.gaze_indicator.set_pdf_page_size(595.0, 842.0)
+
+        # Get raw PDF line bboxes and pass to gaze indicator
+        try:
+            raw_lines = self.pdf_document.extract_line_data(self.current_page)
+            # extract_line_data returns tuples (page, x0, y0, x1, y1, text)
+            bboxes = [(x0, y0, x1, y1) for _, x0, y0, x1, y1, _ in raw_lines]
+            self.gaze_indicator.set_pdf_line_boxes(bboxes)
+        except Exception:
+            self.gaze_indicator.set_pdf_line_boxes([])
+
         # Format the text with proper spacing and line breaks
         formatted_text = text.replace('\n', '<br>')
         # Add some basic styling
@@ -298,7 +418,7 @@ class MainWindow(QMainWindow):
             </div>
         '''
         self.text_label.setText(formatted_text)
-        
+
         self.logger.info(f"Displayed page {self.current_page}")
         
         
