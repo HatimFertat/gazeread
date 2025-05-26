@@ -2,7 +2,7 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout,
                              QScrollArea, QLabel, QPushButton, QFileDialog,
                              QMessageBox, QHBoxLayout, QComboBox, QSpinBox)
 from PyQt6.QtCore import Qt, QTimer, QRect, QPoint, QSize
-from PyQt6.QtGui import QFont, QTextDocument, QPainter, QColor, QPen, QKeyEvent
+from PyQt6.QtGui import QFont, QTextDocument, QPainter, QColor, QPen, QKeyEvent, QPixmap, QImage, QFontMetrics
 import fitz  # PyMuPDF
 import os
 import time
@@ -10,7 +10,10 @@ from ..eye_tracking.tracker import EyeTracker, FilterType
 from ..pdf.document import PDFDocument
 from ..ai.assistant import AIAssistant
 import logging
+import cv2
+import numpy as np
 import re
+from typing import Optional
 
 #
 
@@ -20,131 +23,174 @@ class GazeIndicator(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.gaze_point = None
-        self.text_label = None  # Reference to the text label for scaling
-        self.logger = logging.getLogger(__name__)  # Add logger
-        # PDF page size in points (will be set by MainWindow)
-        self.pdf_width_pt: float | None = None
-        self.pdf_height_pt: float | None = None
-        # Reference to the scroll area for offset compensation
+        self.text_label = None
+        self.logger = logging.getLogger(__name__)
         self.scroll_area = None
-        # Raw PDF line bounding boxes (list of (x0, y0, x1, y1))
-        self.pdf_bboxes: list[tuple[float, float, float, float]] = []
-        # Extents for content area in PDF coords
-        self._pdf_x_min: float | None = None
-        self._pdf_x_max: float | None = None
-        self._pdf_y_min: float | None = None
-        self._pdf_y_max: float | None = None
-    def set_pdf_line_boxes(self, boxes: list[tuple[float, float, float, float]]):
-        """Store raw PDF line bounding boxes and memoise extents."""
-        self.pdf_bboxes = boxes
-        if boxes:
-            xs0, ys0, xs1, ys1 = zip(*boxes)
-            self._pdf_x_min = min(xs0)
-            self._pdf_x_max = max(xs1)
-            self._pdf_y_min = min(ys0)
-            self._pdf_y_max = max(ys1)
-        else:
-            self._pdf_x_min = self._pdf_x_max = None
-            self._pdf_y_min = self._pdf_y_max = None
-        self.update()
-
+        # Store detected bounding boxes
+        self.screen_bboxes = []
+        # Store PDF line positions and bbox-to-line mapping
+        self.line_positions = []
+        self.bbox_line_indices = []
+        # Timer for periodic bbox updates
+        self.update_timer = QTimer()
+        self.update_timer.timeout.connect(self.update_bboxes)
+        self.update_timer.start(500)  # Update every 500ms
+        
     def set_text_label(self, label):
         """Set the reference to the text label for proper scaling."""
         self.text_label = label
-
+        
     def set_scroll_area(self, scroll_area):
-        """Store scroll area reference so we can subtract viewport offsets."""
+        """Store scroll area reference for viewport updates."""
         self.scroll_area = scroll_area
+        # Connect to scrollbar value changes
+        scroll_area.verticalScrollBar().valueChanged.connect(self.update_bboxes)
+        scroll_area.horizontalScrollBar().valueChanged.connect(self.update_bboxes)
 
-    def set_pdf_page_size(self, width_pt: float, height_pt: float):
-        """Store the current PDF page’s width/height in points."""
-        self.pdf_width_pt = width_pt
-        self.pdf_height_pt = height_pt
-
+    def set_line_positions(self, line_positions: list[tuple[float, str]]):
+        """
+        Receive PDFDocument.line_positions as a list of (y_pos, text),
+        sorted by y.
+        """
+        # Sort positions by PDF y-coordinate
+        self.line_positions = sorted(line_positions, key=lambda lt: lt[0])
+        
     def set_gaze_point(self, x: int, y: int):
-        # Convert global screen coordinates to widget-local coordinates
+        """Update gaze point and convert to local coordinates."""
         local_pt = self.mapFromGlobal(QPoint(x, y))
         self.gaze_point = (local_pt.x(), local_pt.y())
         self.update()
-
-    def transform_pdf_bbox(self, bbox: tuple[float, float, float, float]) -> QRect:
-        """
-        Map a PDF bbox (x0, y0, x1, y1) in points to a QRect in the
-        GazeIndicator’s local widget coordinates, honouring font size,
-        QLabel padding, layout margins, and HiDPI scaling.
-        """
-        if not (self.pdf_width_pt and self.pdf_height_pt and self.text_label):
-            return QRect()  # not yet initialised
-
-        x0, y0, x1, y1 = bbox
-
-        # 2) Extract padding from style sheet (“padding: <tb>px <lr>px”)
-        pad_tb = pad_lr = 0
-        ss = self.text_label.styleSheet()
-        m = re.search(r'padding:\s*(\d+)px\s+(\d+)px', ss)
-        if m:
-            pad_tb = int(m.group(1))
-            pad_lr = int(m.group(2))
-
-        # 3) Layout margins (content_layout) – parent of QLabel is content_widget
-        margins = self.text_label.parentWidget().layout().contentsMargins()
-
-        # Use QLabel's inner content rectangle (excludes padding and border)
-        inner_rect = self.text_label.contentsRect()
-
-        # 5) Derive content extents; fall back to full page
-        x_min = self._pdf_x_min if self._pdf_x_min is not None else 0
-        x_max = self._pdf_x_max if self._pdf_x_max is not None else self.pdf_width_pt
-        y_min = self._pdf_y_min if self._pdf_y_min is not None else 0
-        y_max = self._pdf_y_max if self._pdf_y_max is not None else self.pdf_height_pt
-
-        usable_width_px = inner_rect.width()
-        usable_height_px = inner_rect.height()
-
-        # Map the top‑left of the inner rect to this widget’s coordinate system (across unrelated widgets)
-        global_inner_top_left = self.text_label.mapToGlobal(inner_rect.topLeft())
-        label_inner_pos = self.mapFromGlobal(global_inner_top_left)
-
-        # guard against division by zero
-        span_x = max(x_max - x_min, 1e-3)
-        span_y = max(y_max - y_min, 1e-3)
-
-        scale_x = usable_width_px / span_x
-        scale_y = usable_height_px / span_y
-
-        # 6) Convert bbox → px (Qt origin top‑left)
-        qt_x = (x0 - x_min) * scale_x
-        qt_y_top = (y_max - y1) * scale_y
-        qt_w = (x1 - x0) * scale_x
-        qt_h = (y1 - y0) * scale_y
-
-        # 7) Aggregate all offsets
-        final_x = label_inner_pos.x() + int(qt_x)
-        final_y = label_inner_pos.y() + int(qt_y_top)
-
-        return QRect(int(final_x), int(final_y), int(qt_w), int(qt_h))
-
-    def paintEvent(self, event):
-        """Draw PDF line boxes and a red dot at the gaze point when available."""
-        if not self.gaze_point:
+        
+    def update_bboxes(self):
+        """Update text bounding boxes using OpenCV text detection."""
+        if not self.text_label:
             return
+
+        # Create QPixmap from the text label
+        pixmap = QPixmap(self.text_label.size())
+        self.text_label.render(pixmap)
+
+        # Convert QPixmap to OpenCV format
+        image = pixmap.toImage()
+        width = image.width()
+        height = image.height()
+        ptr = image.bits()
+        ptr.setsize(height * width * 4)
+        arr = np.frombuffer(ptr, np.uint8).reshape((height, width, 4))
+        img = cv2.cvtColor(arr, cv2.COLOR_BGRA2BGR)
+
+        # Convert to grayscale
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+        # Apply thresholding to get white text on black background
+        _, binary = cv2.threshold(gray, 0, 255,
+                                 cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+        # Estimate line height and create a kernel to merge characters into full-line blobs
+        fm = QFontMetrics(self.text_label.font())
+        line_h = fm.lineSpacing()
+        kernel = cv2.getStructuringElement(
+            cv2.MORPH_RECT,
+            (self.text_label.width() // 2, max(1, int(line_h * 0.3)))
+        )
+        morph = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
+        # Find line-level contours
+        contours, _ = cv2.findContours(
+            morph,
+            cv2.RETR_EXTERNAL,
+            cv2.CHAIN_APPROX_SIMPLE
+        )
+
+        # Filter and store bounding boxes
+        self.screen_bboxes = []
+        for contour in contours:
+            # Get bounding box
+            x, y, w, h = cv2.boundingRect(contour)
+            # Filter out noise (too small boxes), target line height
+            if w > 20 and (line_h * 0.5) < h < (line_h * 1.5):
+                # Convert to global screen coordinates
+                global_pos = self.text_label.mapToGlobal(QPoint(x, y))
+                self.screen_bboxes.append(QRect(
+                    self.mapFromGlobal(global_pos),
+                    QSize(w, h)
+                ))
+
+        # Merge vertical regions halfway between adjacent lines
+        boxes = sorted(self.screen_bboxes, key=lambda r: r.y())
+        n = len(boxes)
+        if n > 1:
+            # compute current tops and bottoms
+            tops = [r.y() for r in boxes]
+            bottoms = [r.y() + r.height() for r in boxes]
+            # midpoints between adjacent boxes
+            mids = [(bottoms[i] + tops[i+1]) // 2 for i in range(n-1)]
+            merged = []
+            for i, r in enumerate(boxes):
+                x, y, w, h = r.x(), r.y(), r.width(), r.height()
+                if i == 0:
+                    # first line: extend from its top to midpoint with second line
+                    new_top = r.y()
+                    new_bot = mids[0]
+                    merged.append(QRect(x, new_top, w, new_bot - new_top))
+                elif i == n - 1:
+                    new_top = mids[i-1]
+                    new_bot = r.y() + r.height()
+                    merged.append(QRect(x, new_top, w, new_bot - new_top))
+                else:
+                    # middle lines: between adjacent midpoints
+                    new_top = mids[i-1]
+                    new_bot = mids[i]
+                    merged.append(QRect(x, new_top, w, new_bot - new_top))
+            self.screen_bboxes = merged
+
+        # Map each detected screen bbox to its PDF line index by vertical order
+        # Assumes one-to-one count with line_positions
+        self.screen_bboxes.sort(key=lambda r: r.y())
+        self.bbox_line_indices = list(range(len(self.screen_bboxes)))
+
+        self.update()
+        
+    def paintEvent(self, event):
+        """Draw detected text boxes and gaze point."""
+        if not (self.screen_bboxes or self.gaze_point):
+            return
+            
         painter = QPainter(self)
-        # Draw all PDF line boxes
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        # Draw text boxes
         rect_pen = QPen()
         rect_pen.setWidth(2)
         rect_pen.setColor(QColor(0, 255, 0))
         painter.setPen(rect_pen)
-        for bbox in self.pdf_bboxes:
-            rect = self.transform_pdf_bbox(bbox)
-            if rect.isValid():
-                painter.drawRect(rect)
-        # Now draw gaze dot
-        pen = QPen()
-        pen.setWidth(10)
-        pen.setColor(QColor(255, 0, 0))
-        painter.setPen(pen)
-        x, y = self.gaze_point
-        painter.drawPoint(x, y)
+        
+        for bbox in self.screen_bboxes:
+            painter.drawRect(bbox)
+            
+        # Draw gaze point
+        if self.gaze_point:
+            pen = QPen()
+            pen.setWidth(10)
+            pen.setColor(QColor(255, 0, 0))
+            painter.setPen(pen)
+            x, y = self.gaze_point
+            painter.drawPoint(x, y)
+
+    def get_line_index_at_gaze(self) -> Optional[int]:
+        """Return the PDF line index corresponding to the current gaze point."""
+        if not (self.gaze_point and self.screen_bboxes and self.bbox_line_indices):
+            return None
+        pt = QPoint(self.gaze_point[0], self.gaze_point[1])
+        for idx, bbox in zip(self.bbox_line_indices, self.screen_bboxes):
+            if bbox.contains(pt):
+                return idx
+        return None
+
+    def get_line_text_at_gaze(self) -> Optional[str]:
+        """Return the PDF line text at the current gaze point."""
+        idx = self.get_line_index_at_gaze()
+        if idx is not None and idx < len(self.line_positions):
+            return self.line_positions[idx][1]
+        return None
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -379,33 +425,15 @@ class MainWindow(QMainWindow):
     def display_current_page(self):
         if not self.pdf_document:
             return
-
+            
         text = self.pdf_document.get_page_text(self.current_page)
         if not text:
             self.logger.warning(f"No text content found on page {self.current_page}")
             self.text_label.setText("No text content found on this page.")
             return
-
-        # Inform gaze indicator about current PDF page size
-        try:
-            pdf_w_pt, pdf_h_pt = self.pdf_document.get_page_size(self.current_page)
-            self.gaze_indicator.set_pdf_page_size(pdf_w_pt, pdf_h_pt)
-        except AttributeError:
-            # Fallback to typical A4 size if PDFDocument lacks explicit API
-            self.gaze_indicator.set_pdf_page_size(595.0, 842.0)
-
-        # Get raw PDF line bboxes and pass to gaze indicator
-        try:
-            raw_lines = self.pdf_document.extract_line_data(self.current_page)
-            # extract_line_data returns tuples (page, x0, y0, x1, y1, text)
-            bboxes = [(x0, y0, x1, y1) for _, x0, y0, x1, y1, _ in raw_lines]
-            self.gaze_indicator.set_pdf_line_boxes(bboxes)
-        except Exception:
-            self.gaze_indicator.set_pdf_line_boxes([])
-
+            
         # Format the text with proper spacing and line breaks
         formatted_text = text.replace('\n', '<br>')
-        # Add some basic styling
         formatted_text = f'''
             <div style="
                 font-family: Arial;
@@ -413,16 +441,18 @@ class MainWindow(QMainWindow):
                 color: black;
                 text-align: left;
                 width: 100%;
+                padding: 40px 60px;
             ">
                 {formatted_text}
             </div>
         '''
         self.text_label.setText(formatted_text)
-
+        # Inform gaze indicator of new PDF line positions
+        self.gaze_indicator.set_line_positions(self.pdf_document.line_positions)
         self.logger.info(f"Displayed page {self.current_page}")
         
-        
     def update_eye_position(self):
+        """Update eye position and detect which line is being read."""
         if not self.eye_tracker.is_connected():
             self.logger.debug("Eye tracker not connected")
             return
@@ -430,35 +460,56 @@ class MainWindow(QMainWindow):
         gaze_data = self.eye_tracker.get_gaze_point()
         if not gaze_data:
             self.logger.debug("No gaze data received")
-            # Reset current line tracking when gaze data is not available
-            if self.current_line and self.line_start_time:
-                self.line_reading_time = time.time() - self.line_start_time
-                if self.current_line not in self.line_times:
-                    self.line_times[self.current_line] = 0
-                self.line_times[self.current_line] += self.line_reading_time
-                self.logger.info(f"Line tracking reset - Time spent on line: '{self.current_line[:50]}...' = {self.line_reading_time:.2f}s (Total: {self.line_times[self.current_line]:.2f}s)")
-                self.current_line = None
-                self.line_start_time = None
+            self._reset_line_tracking()
             return
 
         gaze_point, is_blinking = gaze_data
         self.logger.debug(f"Gaze point: {gaze_point}, Blinking: {is_blinking}")
         
-        # If blinking, reset current line tracking
+        # If blinking, reset line tracking
         if is_blinking:
             self.logger.debug("Blink detected")
-            if self.current_line and self.line_start_time:
-                self.line_reading_time = time.time() - self.line_start_time
-                if self.current_line not in self.line_times:
-                    self.line_times[self.current_line] = 0
-                self.line_times[self.current_line] += self.line_reading_time
-                self.logger.info(f"Blink detected - Time spent on line: '{self.current_line[:50]}...' = {self.line_reading_time:.2f}s (Total: {self.line_times[self.current_line]:.2f}s)")
-                self.current_line = None
-                self.line_start_time = None
+            self._reset_line_tracking()
             return
 
         # Update gaze indicator with absolute screen coordinates
         self.gaze_indicator.set_gaze_point(gaze_point[0], gaze_point[1])
+        # Determine and handle line change based on gaze
+        new_line = self.gaze_indicator.get_line_text_at_gaze()
+        self._handle_line_change(new_line)
+            
+    def _reset_line_tracking(self):
+        """Reset line tracking state."""
+        # Treat as moving away from any line
+        self._handle_line_change(None)
+            
+    def _update_line_time(self):
+        """Update reading time for the current line."""
+        self.line_reading_time = time.time() - self.line_start_time
+        if self.current_line not in self.line_times:
+            self.line_times[self.current_line] = 0
+        self.line_times[self.current_line] += self.line_reading_time
+        self.logger.info(f"Time spent on line: '{self.current_line[:50]}...' = {self.line_reading_time:.2f}s (Total: {self.line_times[self.current_line]:.2f}s)")
+
+    def _handle_line_change(self, new_line: Optional[str]):
+        """Manage transitions between lines and accumulate reading times."""
+        now = time.time()
+        # If gaze moved to a different line
+        if new_line != self.current_line:
+            # Finalize timing for previous line
+            if self.current_line is not None and self.line_start_time is not None:
+                duration = now - self.line_start_time
+                self.line_times[self.current_line] = self.line_times.get(self.current_line, 0) + duration
+                self.logger.info(
+                    f"Accumulated time on line '{self.current_line[:50]}...': "
+                    f"{self.line_times[self.current_line]:.2f}s"
+                )
+            # Start timing for new line if any
+            if new_line is not None:
+                self.line_start_time = now
+            else:
+                self.line_start_time = None
+            self.current_line = new_line
         
     def show_explanation(self):
         """Show AI explanation for the current line."""
