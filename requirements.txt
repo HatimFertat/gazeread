@@ -1,0 +1,11 @@
+dotenv==0.9.9
+mediapipe==0.10.21
+openai==1.82.0
+opencv-python==4.11.0.86
+pymupdf==1.26.0
+pyqt6==6.9.0
+scikit-learn==1.6.1
+scipy==1.13.1 ; python_full_version < '3.10'
+scipy==1.15.3 ; python_full_version >= '3.10'
+screeninfo==0.8.1
+-e ./eyetrax
