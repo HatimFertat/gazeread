@@ -3,7 +3,6 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout,
                              QMessageBox, QHBoxLayout, QComboBox, QSpinBox)
 from PyQt6.QtCore import Qt, QTimer, QRect, QPoint, QSize
 from PyQt6.QtGui import QFont, QTextDocument, QPainter, QColor, QPen, QKeyEvent, QPixmap, QImage, QFontMetrics
-import fitz  # PyMuPDF
 import os
 import time
 from ..eye_tracking.tracker import EyeTracker, FilterType
@@ -13,7 +12,7 @@ import logging
 import cv2
 import numpy as np
 import re
-from typing import Optional
+from typing import Optional, Dict, Tuple
 
 #
 
@@ -26,11 +25,13 @@ class GazeIndicator(QWidget):
         self.text_label = None
         self.logger = logging.getLogger(__name__)
         self.scroll_area = None
-        # Store detected bounding boxes
-        self.screen_bboxes = []
-        # Store PDF line positions and bbox-to-line mapping
-        self.line_positions = []
-        self.bbox_line_indices = []
+        # Store detected bounding boxes - now by page
+        self.page_screen_bboxes = {}
+        # Store PDF line positions and bbox-to-line mapping - now by page
+        self.page_line_positions = {}
+        self.page_bbox_line_indices = {}
+        # Current page
+        self.current_page = 0
         # Timer for periodic bbox updates
         self.update_timer = QTimer()
         self.update_timer.timeout.connect(self.update_bboxes)
@@ -46,14 +47,19 @@ class GazeIndicator(QWidget):
         # Connect to scrollbar value changes
         scroll_area.verticalScrollBar().valueChanged.connect(self.update_bboxes)
         scroll_area.horizontalScrollBar().valueChanged.connect(self.update_bboxes)
+    
+    def set_current_page(self, page_num: int):
+        """Update the current page number."""
+        self.current_page = page_num
+        self.update_bboxes()
 
-    def set_line_positions(self, line_positions: list[tuple[float, str]]):
+    def set_line_positions(self, page_num: int, line_positions: list[tuple[float, str]]):
         """
-        Receive PDFDocument.line_positions as a list of (y_pos, text),
-        sorted by y.
+        Receive PDFDocument.page_line_positions as a list of (y_pos, text),
+        sorted by y, for a specific page.
         """
         # Sort positions by PDF y-coordinate
-        self.line_positions = sorted(line_positions, key=lambda lt: lt[0])
+        self.page_line_positions[page_num] = sorted(line_positions, key=lambda lt: lt[0])
         
     def set_gaze_point(self, x: int, y: int):
         """Update gaze point and convert to local coordinates."""
@@ -101,7 +107,7 @@ class GazeIndicator(QWidget):
         )
 
         # Filter and store bounding boxes
-        self.screen_bboxes = []
+        screen_bboxes = []
         for contour in contours:
             # Get bounding box
             x, y, w, h = cv2.boundingRect(contour)
@@ -109,13 +115,13 @@ class GazeIndicator(QWidget):
             if w > 20 and (line_h * 0.5) < h < (line_h * 1.5):
                 # Convert to global screen coordinates
                 global_pos = self.text_label.mapToGlobal(QPoint(x, y))
-                self.screen_bboxes.append(QRect(
+                screen_bboxes.append(QRect(
                     self.mapFromGlobal(global_pos),
                     QSize(w, h)
                 ))
 
         # Merge vertical regions halfway between adjacent lines
-        boxes = sorted(self.screen_bboxes, key=lambda r: r.y())
+        boxes = sorted(screen_bboxes, key=lambda r: r.y())
         n = len(boxes)
         if n > 1:
             # compute current tops and bottoms
@@ -140,56 +146,68 @@ class GazeIndicator(QWidget):
                     new_top = mids[i-1]
                     new_bot = mids[i]
                     merged.append(QRect(x, new_top, w, new_bot - new_top))
-            self.screen_bboxes = merged
+            screen_bboxes = merged
 
-        # Map each detected screen bbox to its PDF line index by vertical order
-        # Assumes one-to-one count with line_positions
-        self.screen_bboxes.sort(key=lambda r: r.y())
-        self.bbox_line_indices = list(range(len(self.screen_bboxes)))
+        # Store the bounding boxes for the current page
+        self.page_screen_bboxes[self.current_page] = screen_bboxes
+
+        # Map each detected screen bbox to its PDF line index by vertical order for current page
+        if self.current_page in self.page_line_positions:
+            screen_bboxes.sort(key=lambda r: r.y())
+            self.page_bbox_line_indices[self.current_page] = list(range(len(screen_bboxes)))
 
         self.update()
         
     def paintEvent(self, event):
         """Draw detected text boxes and gaze point."""
-        if not (self.screen_bboxes or self.gaze_point):
+        if not self.gaze_point:
             return
             
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
-        # Draw text boxes
-        rect_pen = QPen()
-        rect_pen.setWidth(2)
-        rect_pen.setColor(QColor(0, 255, 0))
-        painter.setPen(rect_pen)
-        
-        for bbox in self.screen_bboxes:
-            painter.drawRect(bbox)
+        # Draw text boxes for current page
+        if self.current_page in self.page_screen_bboxes:
+            rect_pen = QPen()
+            rect_pen.setWidth(2)
+            rect_pen.setColor(QColor(0, 255, 0))
+            painter.setPen(rect_pen)
+            
+            for bbox in self.page_screen_bboxes[self.current_page]:
+                painter.drawRect(bbox)
             
         # Draw gaze point
-        if self.gaze_point:
-            pen = QPen()
-            pen.setWidth(10)
-            pen.setColor(QColor(255, 0, 0))
-            painter.setPen(pen)
-            x, y = self.gaze_point
-            painter.drawPoint(x, y)
+        pen = QPen()
+        pen.setWidth(10)
+        pen.setColor(QColor(255, 0, 0))
+        painter.setPen(pen)
+        x, y = self.gaze_point
+        painter.drawPoint(x, y)
 
-    def get_line_index_at_gaze(self) -> Optional[int]:
-        """Return the PDF line index corresponding to the current gaze point."""
-        if not (self.gaze_point and self.screen_bboxes and self.bbox_line_indices):
+    def get_line_index_at_gaze(self) -> Optional[Tuple[int, int]]:
+        """Return the (page_num, line_index) corresponding to the current gaze point."""
+        if not (self.gaze_point and self.current_page in self.page_screen_bboxes):
             return None
+            
+        screen_bboxes = self.page_screen_bboxes[self.current_page]
+        if not screen_bboxes:
+            return None
+            
         pt = QPoint(self.gaze_point[0], self.gaze_point[1])
-        for idx, bbox in zip(self.bbox_line_indices, self.screen_bboxes):
+        for idx, bbox in enumerate(screen_bboxes):
             if bbox.contains(pt):
-                return idx
+                return (self.current_page, idx)
         return None
 
-    def get_line_text_at_gaze(self) -> Optional[str]:
-        """Return the PDF line text at the current gaze point."""
-        idx = self.get_line_index_at_gaze()
-        if idx is not None and idx < len(self.line_positions):
-            return self.line_positions[idx][1]
+    def get_line_text_at_gaze(self) -> Optional[Tuple[int, str]]:
+        """Return the (page_num, text) at the current gaze point."""
+        line_info = self.get_line_index_at_gaze()
+        if line_info is None:
+            return None
+            
+        page_num, line_idx = line_info
+        if page_num in self.page_line_positions and line_idx < len(self.page_line_positions[page_num]):
+            return (page_num, self.page_line_positions[page_num][line_idx][1])
         return None
 
 class MainWindow(QMainWindow):
@@ -216,12 +234,13 @@ class MainWindow(QMainWindow):
         self.tracking_timer.timeout.connect(self.update_eye_position)
         self.tracking_timer.start(50)  # 20Hz update rate
         
-        # Reading state
+        # Reading state - now with page tracking
         self.reading_start_time = None
         self.current_line = None
+        self.current_line_page = None
         self.line_start_time = None
         self.line_reading_time = 0
-        self.line_times = {}  # Dictionary to store reading times for each line
+        self.page_line_times = {}  # Dictionary to store reading times for each line by page {page: {line: time}}
         
         # Try to load existing calibration
         self.load_calibration()
@@ -272,6 +291,18 @@ class MainWindow(QMainWindow):
         self.font_size_spin.valueChanged.connect(self.change_font_size)
         toolbar_layout.addWidget(self.font_size_spin)
         
+        # Page navigation controls
+        self.prev_page_button = QPushButton("Previous Page")
+        self.prev_page_button.clicked.connect(self.previous_page)
+        toolbar_layout.addWidget(self.prev_page_button)
+        
+        self.next_page_button = QPushButton("Next Page")
+        self.next_page_button.clicked.connect(self.next_page)
+        toolbar_layout.addWidget(self.next_page_button)
+        
+        self.page_label = QLabel("Page: 0/0")
+        toolbar_layout.addWidget(self.page_label)
+        
         # Fullscreen button
         self.fullscreen_button = QPushButton("Fullscreen (Enter)")
         self.fullscreen_button.clicked.connect(self.toggle_fullscreen)
@@ -284,15 +315,15 @@ class MainWindow(QMainWindow):
         toolbar_layout.addStretch()
         layout.addWidget(self.toolbar)
         
-        # PDF viewer
+        # Content area - text display
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         
-        self.content_widget = QWidget()
-        self.content_layout = QVBoxLayout(self.content_widget)
-        self.content_layout.setContentsMargins(50, 20, 50, 20)  # Add margins for better appearance
-        self.content_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)  # Center horizontally
+        self.text_content_widget = QWidget()
+        self.text_content_layout = QVBoxLayout(self.text_content_widget)
+        self.text_content_layout.setContentsMargins(50, 20, 50, 20)
+        self.text_content_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         
         self.text_label = QLabel()
         self.text_label.setWordWrap(False)
@@ -311,18 +342,18 @@ class MainWindow(QMainWindow):
         # Set minimum width for the text label to ensure proper sizing
         self.text_label.setMinimumWidth(800)
         
-        self.content_layout.addWidget(self.text_label)
-        self.scroll_area.setWidget(self.content_widget)
+        self.text_content_layout.addWidget(self.text_label)
+        self.scroll_area.setWidget(self.text_content_widget)
+        
+        # Add scroll area to main layout
         layout.addWidget(self.scroll_area)
         
-        # Add gaze indicator to the central widget instead of viewport
+        # Add gaze indicator to the central widget
         self.gaze_indicator = GazeIndicator(self.centralWidget())
         self.gaze_indicator.setGeometry(self.centralWidget().rect())
-        self.gaze_indicator.set_text_label(self.text_label)  # Set the text label reference
+        self.gaze_indicator.set_text_label(self.text_label)
         self.gaze_indicator.set_scroll_area(self.scroll_area)
-        self.gaze_indicator.raise_()  # Ensure the gaze indicator stays on top
-        
-        # Removed resize event patching for text lines
+        self.gaze_indicator.raise_()
         
     def toggle_fullscreen(self):
         """Toggle fullscreen mode."""
@@ -346,6 +377,10 @@ class MainWindow(QMainWindow):
         """Handle keyboard events."""
         if event.key() == Qt.Key.Key_Return or event.key() == Qt.Key.Key_Enter:
             self.toggle_fullscreen()
+        elif event.key() == Qt.Key.Key_Right or event.key() == Qt.Key.Key_Space:
+            self.next_page()
+        elif event.key() == Qt.Key.Key_Left or event.key() == Qt.Key.Key_Backspace:
+            self.previous_page()
         else:
             super().keyPressEvent(event)
             
@@ -364,16 +399,20 @@ class MainWindow(QMainWindow):
         font = self.text_label.font()
         font.setPointSize(size)
         self.text_label.setFont(font)
+        # Update bounding boxes after font size change
+        self.gaze_indicator.update_bboxes()
         
-    def change_model(self, model_name: str):
-        """Change the AI model being used."""
-        try:
-            self.ai_assistant.set_model(model_name)
-            self.status_label.setText(f"AI Model: {model_name}")
-        except Exception as e:
-            QMessageBox.warning(self, "Error", f"Failed to change model: {e}")
-            # Reset combo box to previous value
-            self.model_combo.setCurrentText(self.ai_assistant.model_name)
+    def next_page(self):
+        """Move to the next page."""
+        if self.pdf_document and self.current_page < self.pdf_document.get_total_pages() - 1:
+            self.current_page += 1
+            self.display_current_page()
+            
+    def previous_page(self):
+        """Move to the previous page."""
+        if self.pdf_document and self.current_page > 0:
+            self.current_page -= 1
+            self.display_current_page()
         
     def load_calibration(self):
         """Try to load existing calibration model."""
@@ -416,8 +455,15 @@ class MainWindow(QMainWindow):
             try:
                 self.pdf_document = PDFDocument(file_name)
                 self.current_page = 0
+                
+                # Initialize page_line_times for all pages
+                self.page_line_times = {}
+                for page in range(self.pdf_document.get_total_pages()):
+                    self.page_line_times[page] = {}
+                
                 self.display_current_page()
                 self.logger.info(f"Successfully opened PDF: {file_name}")
+                
             except Exception as e:
                 QMessageBox.warning(self, "Error", f"Failed to open PDF: {str(e)}")
                 self.logger.error(f"Failed to open PDF {file_name}: {str(e)}")
@@ -426,6 +472,7 @@ class MainWindow(QMainWindow):
         if not self.pdf_document:
             return
             
+        # Get text for the current page
         text = self.pdf_document.get_page_text(self.current_page)
         if not text:
             self.logger.warning(f"No text content found on page {self.current_page}")
@@ -447,8 +494,26 @@ class MainWindow(QMainWindow):
             </div>
         '''
         self.text_label.setText(formatted_text)
-        # Inform gaze indicator of new PDF line positions
-        self.gaze_indicator.set_line_positions(self.pdf_document.line_positions)
+        
+        # Update page display
+        self.page_label.setText(f"Page: {self.current_page + 1}/{self.pdf_document.get_total_pages()}")
+        
+        # Inform gaze indicator of new line positions for current page
+        line_positions = self.pdf_document.get_line_positions(self.current_page)
+        self.gaze_indicator.set_current_page(self.current_page)
+        self.gaze_indicator.set_line_positions(self.current_page, line_positions)
+        
+        # Also pre-load adjacent pages for context
+        if self.current_page > 0:
+            prev_page = self.current_page - 1
+            prev_line_positions = self.pdf_document.get_line_positions(prev_page)
+            self.gaze_indicator.set_line_positions(prev_page, prev_line_positions)
+            
+        if self.current_page < self.pdf_document.get_total_pages() - 1:
+            next_page = self.current_page + 1
+            next_line_positions = self.pdf_document.get_line_positions(next_page)
+            self.gaze_indicator.set_line_positions(next_page, next_line_positions)
+        
         self.logger.info(f"Displayed page {self.current_page}")
         
     def update_eye_position(self):
@@ -474,53 +539,76 @@ class MainWindow(QMainWindow):
 
         # Update gaze indicator with absolute screen coordinates
         self.gaze_indicator.set_gaze_point(gaze_point[0], gaze_point[1])
+        
         # Determine and handle line change based on gaze
-        new_line = self.gaze_indicator.get_line_text_at_gaze()
-        self._handle_line_change(new_line)
+        line_info = self.gaze_indicator.get_line_text_at_gaze()
+        if line_info is not None:
+            page_num, line_text = line_info
+            self._handle_line_change(page_num, line_text)
+        else:
+            self._reset_line_tracking()
             
     def _reset_line_tracking(self):
         """Reset line tracking state."""
         # Treat as moving away from any line
-        self._handle_line_change(None)
+        if self.current_line is not None and self.current_line_page is not None:
+            self._handle_line_change(None, None)
             
-    def _update_line_time(self):
-        """Update reading time for the current line."""
-        self.line_reading_time = time.time() - self.line_start_time
-        if self.current_line not in self.line_times:
-            self.line_times[self.current_line] = 0
-        self.line_times[self.current_line] += self.line_reading_time
-        self.logger.info(f"Time spent on line: '{self.current_line[:50]}...' = {self.line_reading_time:.2f}s (Total: {self.line_times[self.current_line]:.2f}s)")
-
-    def _handle_line_change(self, new_line: Optional[str]):
+    def _handle_line_change(self, page_num: Optional[int], new_line: Optional[str]):
         """Manage transitions between lines and accumulate reading times."""
         now = time.time()
-        # If gaze moved to a different line
-        if new_line != self.current_line:
+        
+        # If gaze moved to a different line or page
+        if new_line != self.current_line or page_num != self.current_line_page:
             # Finalize timing for previous line
-            if self.current_line is not None and self.line_start_time is not None:
+            if self.current_line is not None and self.current_line_page is not None and self.line_start_time is not None:
                 duration = now - self.line_start_time
-                self.line_times[self.current_line] = self.line_times.get(self.current_line, 0) + duration
-                self.logger.info(
-                    f"Accumulated time on line '{self.current_line[:50]}...': "
-                    f"{self.line_times[self.current_line]:.2f}s"
+                if self.current_line_page not in self.page_line_times:
+                    self.page_line_times[self.current_line_page] = {}
+                self.page_line_times[self.current_line_page][self.current_line] = (
+                    self.page_line_times.get(self.current_line_page, {}).get(self.current_line, 0) + duration
                 )
+                self.logger.info(
+                    f"Accumulated time on line (Page {self.current_line_page+1}) '{self.current_line[:50]}...': "
+                    f"{self.page_line_times[self.current_line_page][self.current_line]:.2f}s"
+                )
+                
+                # If moving to a new page, update current page
+                if page_num is not None and page_num != self.current_line_page:
+                    self.current_page = page_num
+                    self.display_current_page()
+            
             # Start timing for new line if any
-            if new_line is not None:
+            if new_line is not None and page_num is not None:
                 self.line_start_time = now
+                self.current_line = new_line
+                self.current_line_page = page_num
+                # Initialize the line time if needed
+                if page_num not in self.page_line_times:
+                    self.page_line_times[page_num] = {}
+                if new_line not in self.page_line_times[page_num]:
+                    self.page_line_times[page_num][new_line] = 0
             else:
                 self.line_start_time = None
-            self.current_line = new_line
+                self.current_line = None
+                self.current_line_page = None
         
     def show_explanation(self):
         """Show AI explanation for the current line."""
-        if not self.current_line or not self.pdf_document:
+        if not self.current_line or not self.pdf_document or self.current_line_page is None:
             return
             
-        context_lines = self.pdf_document.get_context_lines(self.current_line)
+        context_lines = self.pdf_document.get_context_lines(self.current_line_page, self.current_line)
+        # Extract just the text from the (page, text) tuples
+        context_text = [text for _, text in context_lines]
+        
+        # Get accumulated reading time for this line
+        line_time = self.page_line_times.get(self.current_line_page, {}).get(self.current_line, 0)
+        
         explanation = self.ai_assistant.get_explanation(
             self.current_line,
-            context_lines,
-            self.line_reading_time
+            context_text,
+            line_time
         )
         
         self.explanation_label.setText(explanation)

@@ -1,73 +1,139 @@
-import fitz
-from typing import List, Optional, Tuple
 import logging
+from typing import List, Optional, Tuple, Dict
+import fitz  # PyMuPDF
+import os
+import re
 
 class PDFDocument:
     def __init__(self, file_path: str):
+        self.file_path = file_path
         self.doc = fitz.open(file_path)
         self.current_page = 0
-        self.line_positions = []  # List of (y_position, line_text) tuples
-        logging.info(f"Opened PDF document: {file_path}")
-        logging.info(f"Total pages in document: {len(self.doc)}")
+        self.total_pages = len(self.doc)
         
+        # Multi-page line tracking: dictionary of {page_number: [(y_position, line_text)]}
+        self.page_line_positions = {}
+        # Dictionary to store reading times for each line: {page_number: {line_text: time}}
+        self.page_line_times = {}
+        
+        logging.info(f"Opened PDF document: {file_path}")
+        logging.info(f"Total pages in document: {self.total_pages}")
+    
     def get_page_text(self, page_num: int) -> str:
-        """Get the text content of a specific page."""
-        if not 0 <= page_num < len(self.doc):
+        """Get the text content of a specific page and extract line positions."""
+        if not 0 <= page_num < self.total_pages:
             logging.warning(f"Invalid page number: {page_num}")
             return ""
             
         self.current_page = page_num
         
-        # Extract text using extract_line_data for this page only
-        current_page_lines = self.extract_line_data(page_num)
-        
-        if not current_page_lines:
-            logging.warning(f"No text found on page {page_num}")
-            return ""
+        # Check if we've already processed this page
+        if page_num not in self.page_line_positions:
+            # Extract text using extract_line_data for this page only
+            current_page_lines = self.extract_line_data(page_num)
             
-        # Store line positions for later use
-        self.line_positions = [(line[2], line[5]) for line in current_page_lines]  # y0 and text
+            if not current_page_lines:
+                logging.warning(f"No text found on page {page_num}")
+                self.page_line_positions[page_num] = []
+                return ""
+                
+            # Store line positions for this page
+            self.page_line_positions[page_num] = [(line[2], line[5]) for line in current_page_lines]  # y0 and text
+            
+            # Initialize the line times dictionary for this page
+            if page_num not in self.page_line_times:
+                self.page_line_times[page_num] = {}
         
-        # Build text by joining lines
-        text = "\n".join(line[5] for line in current_page_lines)
-        
-        return text
-        
-    def get_line_at_position(self, y_position: float) -> Optional[str]:
-        """Get the text of the line closest to the given y-position."""
-        if not self.line_positions:
+        # Return the text by joining all lines for this page
+        return "\n".join(line[1] for line in self.page_line_positions[page_num])
+    
+    def get_line_at_position(self, page_num: int, y_position: float) -> Optional[str]:
+        """Get the text of the line closest to the given y-position on the specified page."""
+        if page_num not in self.page_line_positions or not self.page_line_positions[page_num]:
             return None
             
         # Find the closest line to the given y-position
-        closest_line = min(self.line_positions, key=lambda x: abs(x[0] - y_position))
+        line_positions = self.page_line_positions[page_num]
+        closest_line = min(line_positions, key=lambda x: abs(x[0] - y_position))
         return closest_line[1]
+    
+    def get_context_lines(self, page_num: int, current_line: str, num_lines: int = 3) -> List[Tuple[int, str]]:
+        """Get the context lines around the current line, possibly from adjacent pages.
+        Returns list of (page_number, line_text) tuples."""
+        results = []
         
-    def get_context_lines(self, current_line: str, num_lines: int = 3) -> List[str]:
-        """Get the context lines around the current line."""
-        if not self.line_positions:
+        # If the page is not processed yet
+        if page_num not in self.page_line_positions:
             return []
             
-        # Find the index of the current line
+        # Try to find the current line in the current page
         try:
-            current_index = next(i for i, (_, text) in enumerate(self.line_positions) 
+            current_page_lines = self.page_line_positions[page_num]
+            current_index = next(i for i, (_, text) in enumerate(current_page_lines) 
                                if text == current_line)
-        except StopIteration:
-            return []
+                               
+            # Get lines before the current line on the current page
+            start_idx = max(0, current_index - num_lines)
+            for i in range(start_idx, current_index):
+                results.append((page_num, current_page_lines[i][1]))
+                
+            # Add the current line
+            results.append((page_num, current_line))
             
-        # Get the surrounding lines
-        start_idx = max(0, current_index - num_lines)
-        end_idx = min(len(self.line_positions), current_index + num_lines + 1)
+            # Get lines after the current line on the current page
+            end_idx = min(len(current_page_lines), current_index + num_lines + 1)
+            for i in range(current_index + 1, end_idx):
+                results.append((page_num, current_page_lines[i][1]))
+                
+        except StopIteration:
+            # Current line not found on the current page
+            pass
+            
+        # If we couldn't get enough context from the current page, 
+        # check previous and next pages
         
-        return [text for _, text in self.line_positions[start_idx:end_idx]]
+        # Check previous page if needed
+        if len(results) < 2*num_lines + 1 and page_num > 0:
+            prev_page = page_num - 1
+            # Load the previous page if not already loaded
+            if prev_page not in self.page_line_positions:
+                self.get_page_text(prev_page)
+                
+            if prev_page in self.page_line_positions:
+                prev_lines = self.page_line_positions[prev_page]
+                # Add lines from the end of previous page
+                lines_needed = num_lines - len([l for p, l in results if p == page_num and results.index((p, l)) < results.index((page_num, current_line))])
+                if lines_needed > 0 and prev_lines:
+                    start_idx = max(0, len(prev_lines) - lines_needed)
+                    prev_results = [(prev_page, line) for _, line in prev_lines[start_idx:]]
+                    results = prev_results + results
+                    
+        # Check next page if needed
+        if len(results) < 2*num_lines + 1 and page_num < self.total_pages - 1:
+            next_page = page_num + 1
+            # Load the next page if not already loaded
+            if next_page not in self.page_line_positions:
+                self.get_page_text(next_page)
+                
+            if next_page in self.page_line_positions:
+                next_lines = self.page_line_positions[next_page]
+                # Add lines from the beginning of next page
+                lines_needed = num_lines - len([l for p, l in results if p == page_num and results.index((p, l)) > results.index((page_num, current_line))])
+                if lines_needed > 0 and next_lines:
+                    end_idx = min(lines_needed, len(next_lines))
+                    next_results = [(next_page, line) for _, line in next_lines[:end_idx]]
+                    results = results + next_results
+        
+        return results
+    
+    def get_line_positions(self, page_num: int) -> List[Tuple[float, str]]:
+        """Get the line positions for a specific page."""
+        return self.page_line_positions.get(page_num, [])
         
     def get_total_pages(self) -> int:
         """Get the total number of pages in the document."""
-        return len(self.doc)
-        
-    def close(self):
-        """Close the PDF document."""
-        if self.doc:
-            self.doc.close() 
+        return self.total_pages
+    
     def extract_line_data(self, page_num: Optional[int] = None) -> List[Tuple[int, float, float, float, float, str]]:
         """Extract line data with bounding boxes and text from a specific page or the entire document.
         
@@ -118,3 +184,8 @@ class PDFDocument:
                     all_lines_data.append(line_data)
         
         return all_lines_data
+        
+    def close(self):
+        """Close the PDF document."""
+        if self.doc:
+            self.doc.close()
