@@ -13,6 +13,8 @@ class PDFDocument:
         
         # Multi-page line tracking: dictionary of {page_number: [(y_position, line_text)]}
         self.page_line_positions = {}
+        # Multi-page paragraph tracking: dictionary of {page_number: [(y_position, paragraph_text)]}
+        self.page_paragraph_positions = {}
         # Dictionary to store reading times for each line: {page_number: {line_text: time}}
         self.page_line_times = {}
         
@@ -35,10 +37,15 @@ class PDFDocument:
             if not current_page_lines:
                 logging.warning(f"No text found on page {page_num}")
                 self.page_line_positions[page_num] = []
+                self.page_paragraph_positions[page_num] = []
                 return ""
                 
-            # Store line positions for this page
-            self.page_line_positions[page_num] = [(line[2], line[5]) for line in current_page_lines]  # y0 and text
+            # Store line positions for this page with blockno
+            # Format: [(y0, text, blockno), ...]
+            self.page_line_positions[page_num] = [(line[2], line[5], line[6]) for line in current_page_lines]  # y0, text, blockno
+            
+            # Process paragraphs for this page - using blocks directly
+            self.process_paragraphs(page_num)
             
             # Initialize the line times dictionary for this page
             if page_num not in self.page_line_times:
@@ -47,6 +54,54 @@ class PDFDocument:
         # Return the text by joining all lines for this page
         return "\n".join(line[1] for line in self.page_line_positions[page_num])
     
+    def process_paragraphs(self, page_num: int) -> None:
+        """Identify paragraphs from lines based on block structure in the PDF."""
+        if page_num not in self.page_line_positions:
+            return
+            
+        # Extract blocks directly from PyMuPDF instead of inferring from lines
+        page = self.doc[page_num]
+        blocks = page.get_text("blocks")
+        
+        paragraphs = []
+        for block in blocks:
+            # block format is (x0, y0, x1, y1, "text", block_no, block_type)
+            x0, y0, x1, y1, text, block_no, block_type = block
+            # Skip empty blocks or non-text blocks
+            if len(text.strip()) < 3 or block_type != 0:
+                continue
+            # Use the y0 position and text
+            paragraphs.append((y0, text))
+            
+        # Store the paragraph positions sorted by y-position
+        self.page_paragraph_positions[page_num] = sorted(paragraphs, key=lambda p: p[0])
+        logging.info(f"Page {page_num}: Found {len(paragraphs)} paragraphs from {len(blocks)} blocks")
+        
+    def get_line_positions(self, page_num: int, granularity: str = "line") -> List[Tuple]:
+        """
+        Get the text positions for a specific page.
+        
+        Args:
+            page_num: The page number to get positions for
+            granularity: "line" or "block" to determine what type of positions to return
+            
+        Returns:
+            For line granularity: List of (y_position, text, block_number) tuples
+            For block granularity: List of (y_position, text) tuples
+        """
+        if granularity == "block":
+            # Return paragraph positions if available, otherwise process them
+            if page_num not in self.page_paragraph_positions:
+                # This will trigger paragraph processing
+                self.get_page_text(page_num)
+                
+            paragraphs = self.page_paragraph_positions.get(page_num, [])
+            logging.info(f"Page {page_num}: Found {len(paragraphs)} paragraphs")
+            return paragraphs
+        else:
+            # Default to line positions
+            return self.page_line_positions.get(page_num, [])
+
     def get_line_at_position(self, page_num: int, y_position: float) -> Optional[str]:
         """Get the text of the line closest to the given y-position on the specified page."""
         if page_num not in self.page_line_positions or not self.page_line_positions[page_num]:
@@ -56,6 +111,16 @@ class PDFDocument:
         line_positions = self.page_line_positions[page_num]
         closest_line = min(line_positions, key=lambda x: abs(x[0] - y_position))
         return closest_line[1]
+    
+    def get_paragraph_at_position(self, page_num: int, y_position: float) -> Optional[str]:
+        """Get the text of the paragraph closest to the given y-position."""
+        if page_num not in self.page_paragraph_positions or not self.page_paragraph_positions[page_num]:
+            return None
+            
+        # Find the closest paragraph to the given y-position
+        paragraph_positions = self.page_paragraph_positions[page_num]
+        closest_paragraph = min(paragraph_positions, key=lambda x: abs(x[0] - y_position))
+        return closest_paragraph[1]
     
     def get_context_lines(self, page_num: int, current_line: str, num_lines: int = 3) -> List[Tuple[int, str]]:
         """Get the context lines around the current line, possibly from adjacent pages.
@@ -126,10 +191,6 @@ class PDFDocument:
         
         return results
     
-    def get_line_positions(self, page_num: int) -> List[Tuple[float, str]]:
-        """Get the line positions for a specific page."""
-        return self.page_line_positions.get(page_num, [])
-        
     def get_total_pages(self) -> int:
         """Get the total number of pages in the document."""
         return self.total_pages
@@ -155,6 +216,7 @@ class PDFDocument:
             page = self.doc[page_number]
             # Get words with their positions and metadata
             words = page.get_text("words")
+            logging.info(f"Page {page_number}: Extracted {len(words)} words")
             
             # Group words by block and line numbers
             line_groups = {}
@@ -164,6 +226,16 @@ class PDFDocument:
                 if key not in line_groups:
                     line_groups[key] = []
                 line_groups[key].append(word)
+            
+            block_line_count = {}
+            for (blockno, lineno) in line_groups.keys():
+                if blockno not in block_line_count:
+                    block_line_count[blockno] = 0
+                block_line_count[blockno] += 1
+ 
+            logging.info(f"Page {page_number}: Found {len(block_line_count)} blocks")
+            for block, line_count in block_line_count.items():
+                logging.info(f"Page {page_number}: Block {block} has {line_count} lines")
             
             # Process each line group
             for (blockno, lineno) in sorted(line_groups.keys()):
@@ -180,7 +252,7 @@ class PDFDocument:
                 line_text = " ".join(word[4] for word in sorted_words)
                 
                 if line_text.strip():
-                    line_data = (page_number + 1, x0, y0, x1, y1, line_text.strip())
+                    line_data = (page_number + 1, x0, y0, x1, y1, line_text.strip(), blockno)
                     all_lines_data.append(line_data)
         
         return all_lines_data

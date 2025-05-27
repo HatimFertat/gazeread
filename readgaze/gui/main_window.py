@@ -29,9 +29,12 @@ class GazeIndicator(QWidget):
         self.page_screen_bboxes = {}
         # Store PDF line positions and bbox-to-line mapping - now by page
         self.page_line_positions = {}
+        self.page_paragraph_positions = {}
         self.page_bbox_line_indices = {}
         # Current page
         self.current_page = 0
+        # Granularity setting (line or paragraph)
+        self.granularity = "line"
         # Timer for periodic bbox updates
         self.update_timer = QTimer()
         self.update_timer.timeout.connect(self.update_bboxes)
@@ -53,13 +56,34 @@ class GazeIndicator(QWidget):
         self.current_page = page_num
         self.update_bboxes()
 
-    def set_line_positions(self, page_num: int, line_positions: list[tuple[float, str]]):
+    def set_line_positions(self, page_num: int, line_positions: list, granularity: str = "line"):
         """
-        Receive PDFDocument.page_line_positions as a list of (y_pos, text),
-        sorted by y, for a specific page.
+        Receive PDFDocument positions as a list of tuples, sorted by y, for a specific page.
+        
+        Args:
+            page_num: The page number
+            line_positions: For lines: List of (y_pos, text, block_num) tuples
+                           For blocks: List of (y_pos, text) tuples
+            granularity: "line" or "block" to determine where to store the positions
         """
         # Sort positions by PDF y-coordinate
-        self.page_line_positions[page_num] = sorted(line_positions, key=lambda lt: lt[0])
+        if granularity == "block":
+            self.page_paragraph_positions = self.page_paragraph_positions or {}
+            self.page_paragraph_positions[page_num] = sorted(line_positions, key=lambda lt: lt[0])
+        else:
+            # For lines, extract block mapping information
+            sorted_lines = sorted(line_positions, key=lambda lt: lt[0])
+            # Store positions without block numbers
+            self.page_line_positions[page_num] = [(pos[0], pos[1]) for pos in sorted_lines]
+            
+            # Create block mapping for lines
+            if sorted_lines and len(sorted_lines[0]) > 2:  # If block information is available
+                # Create a mapping from line index to block number
+                if hasattr(self, 'text_label') and self.text_label is not None:
+                    if not hasattr(self.text_label, 'blockMap'):
+                        self.text_label.blockMap = []
+                    self.text_label.blockMap = [pos[2] for pos in sorted_lines]
+                    self.logger.info(f"Page {page_num}: Line to block mapping: {self.text_label.blockMap}")
         
     def set_gaze_point(self, x: int, y: int):
         """Update gaze point and convert to local coordinates."""
@@ -67,6 +91,11 @@ class GazeIndicator(QWidget):
         self.gaze_point = (local_pt.x(), local_pt.y())
         self.update()
         
+    def set_granularity(self, granularity: str):
+        """Update the text detection granularity (line or paragraph)"""
+        self.granularity = granularity
+        self.update_bboxes()
+
     def update_bboxes(self):
         """Update text bounding boxes using OpenCV text detection."""
         if not self.text_label:
@@ -91,70 +120,184 @@ class GazeIndicator(QWidget):
         # Apply thresholding to get white text on black background
         _, binary = cv2.threshold(gray, 0, 255,
                                  cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-        # Estimate line height and create a kernel to merge characters into full-line blobs
+
+        # Estimate line height and create appropriate kernel based on granularity
         fm = QFontMetrics(self.text_label.font())
         line_h = fm.lineSpacing()
+        
+        # Always detect lines, even in block mode (we'll group them later)
         kernel = cv2.getStructuringElement(
             cv2.MORPH_RECT,
             (self.text_label.width() // 2, max(1, int(line_h * 0.3)))
         )
         morph = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
-        # Find line-level contours
+
+        # Find contours
         contours, _ = cv2.findContours(
             morph,
             cv2.RETR_EXTERNAL,
             cv2.CHAIN_APPROX_SIMPLE
         )
 
-        # Filter and store bounding boxes
-        screen_bboxes = []
+        # Filter and store line bounding boxes
+        line_screen_bboxes = []
         for contour in contours:
             # Get bounding box
             x, y, w, h = cv2.boundingRect(contour)
-            # Filter out noise (too small boxes), target line height
+            
+            # Filter using line criteria
             if w > 20 and (line_h * 0.5) < h < (line_h * 1.5):
                 # Convert to global screen coordinates
                 global_pos = self.text_label.mapToGlobal(QPoint(x, y))
-                screen_bboxes.append(QRect(
+                line_screen_bboxes.append(QRect(
                     self.mapFromGlobal(global_pos),
                     QSize(w, h)
                 ))
 
-        # Merge vertical regions halfway between adjacent lines
-        boxes = sorted(screen_bboxes, key=lambda r: r.y())
-        n = len(boxes)
-        if n > 1:
-            # compute current tops and bottoms
-            tops = [r.y() for r in boxes]
-            bottoms = [r.y() + r.height() for r in boxes]
-            # midpoints between adjacent boxes
-            mids = [(bottoms[i] + tops[i+1]) // 2 for i in range(n-1)]
-            merged = []
-            for i, r in enumerate(boxes):
-                x, y, w, h = r.x(), r.y(), r.width(), r.height()
-                if i == 0:
-                    # first line: extend from its top to midpoint with second line
-                    new_top = r.y()
-                    new_bot = mids[0]
-                    merged.append(QRect(x, new_top, w, new_bot - new_top))
-                elif i == n - 1:
-                    new_top = mids[i-1]
-                    new_bot = r.y() + r.height()
-                    merged.append(QRect(x, new_top, w, new_bot - new_top))
-                else:
-                    # middle lines: between adjacent midpoints
-                    new_top = mids[i-1]
-                    new_bot = mids[i]
-                    merged.append(QRect(x, new_top, w, new_bot - new_top))
-            screen_bboxes = merged
+        # Sort the lines by vertical position
+        line_screen_bboxes.sort(key=lambda r: r.y())
+        
+        # Merge adjacent lines for better line detection
+        if line_screen_bboxes:
+            n = len(line_screen_bboxes)
+            if n > 1:
+                tops = [r.y() for r in line_screen_bboxes]
+                bottoms = [r.y() + r.height() for r in line_screen_bboxes]
+                
+                # midpoints between adjacent boxes
+                mids = [(bottoms[i] + tops[i+1]) // 2 for i in range(n-1)]
+                merged_lines = []
+                for i, r in enumerate(line_screen_bboxes):
+                    x, y, w, h = r.x(), r.y(), r.width(), r.height()
+                    if i == 0:
+                        # first line: extend from its top to midpoint with second line
+                        new_top = r.y()
+                        new_bot = mids[0]
+                        merged_lines.append(QRect(x, new_top, w, new_bot - new_top))
+                    elif i == n - 1:
+                        new_top = mids[i-1]
+                        new_bot = r.y() + r.height()
+                        merged_lines.append(QRect(x, new_top, w, new_bot - new_top))
+                    else:
+                        # middle lines: between adjacent midpoints
+                        new_top = mids[i-1]
+                        new_bot = mids[i]
+                        merged_lines.append(QRect(x, new_top, w, new_bot - new_top))
+                line_screen_bboxes = merged_lines
+        
+        # Now that we have line bounding boxes, either use them directly or group them by block
+        if self.granularity == "block":
+            # Get the line positions with block information from PDFDocument
+            # We need to find out which lines belong to which block
+            self.page_screen_bboxes[self.current_page] = []
+            
+            # Get block information from PDFDocument
+            if hasattr(self.text_label, 'blockMap') and self.text_label.blockMap and len(self.text_label.blockMap) > 0:
+                # If we already have block mapping information
+                block_line_mapping = self.text_label.blockMap
+                
+                # Group line bounding boxes by block
+                blocks = {}
+                for line_idx, line_bbox in enumerate(line_screen_bboxes):
+                    # Make sure line_idx is within bounds of our mapping
+                    if line_idx < len(block_line_mapping):
+                        block_num = block_line_mapping[line_idx]
+                        if block_num not in blocks:
+                            blocks[block_num] = []
+                        blocks[block_num].append(line_bbox)
+                    
+                # Create a bounding box for each block by merging its lines
+                for block_num, lines in blocks.items():
+                    if lines:
+                        # Get extremes
+                        left = min(box.left() for box in lines)
+                        top = min(box.top() for box in lines)
+                        right = max(box.right() for box in lines)
+                        bottom = max(box.bottom() for box in lines)
+                        
+                        # Create block bounding box
+                        block_bbox = QRect(left, top, right - left, bottom - top)
+                        self.page_screen_bboxes[self.current_page].append(block_bbox)
+                
+                self.logger.info(f"Page {self.current_page}: Created {len(self.page_screen_bboxes[self.current_page])} block boxes from {len(blocks)} blocks")
+            else:
+                # Fallback: If we don't have block mapping, use the PDF paragraph positions
+                if self.current_page in self.page_paragraph_positions:
+                    # Get paragraph positions
+                    pdf_blocks = self.page_paragraph_positions[self.current_page]
+                    
+                    # Create a block for each paragraph position by finding lines that belong to it
+                    if pdf_blocks:
+                        pdf_block_centers = [(pos[0] + 10) for pos in pdf_blocks]  # Approximate center Y
+                        
+                        # Group lines by closest paragraph
+                        grouped_lines = [[] for _ in range(len(pdf_blocks))]
+                        
+                        for line_bbox in line_screen_bboxes:
+                            line_center = line_bbox.y() + line_bbox.height() / 2
+                            # Find closest PDF block
+                            distances = [abs(line_center - (y_pos * 10)) for y_pos in pdf_block_centers]  # Scale factor
+                            closest_block = distances.index(min(distances))
+                            grouped_lines[closest_block].append(line_bbox)
+                        
+                        # Create bounding box for each group
+                        for block_idx, lines in enumerate(grouped_lines):
+                            if lines:
+                                # Get extremes
+                                left = min(box.left() for box in lines)
+                                top = min(box.top() for box in lines)
+                                right = max(box.right() for box in lines)
+                                bottom = max(box.bottom() for box in lines)
+                                
+                                # Create block bounding box
+                                block_bbox = QRect(left, top, right - left, bottom - top)
+                                self.page_screen_bboxes[self.current_page].append(block_bbox)
+                        
+                        self.logger.info(f"Page {self.current_page}: Created {len(self.page_screen_bboxes[self.current_page])} block boxes from PDF blocks")
+                
+                # If we still don't have blocks, add a marker to be improved next time
+                if not self.page_screen_bboxes[self.current_page]:
+                    self.logger.warning(f"Page {self.current_page}: No block information available, using line bounding boxes")
+                    self.page_screen_bboxes[self.current_page] = line_screen_bboxes
+        else:
+            # Line granularity - use the line bounding boxes directly
+            self.page_screen_bboxes[self.current_page] = line_screen_bboxes
 
-        # Store the bounding boxes for the current page
-        self.page_screen_bboxes[self.current_page] = screen_bboxes
-
-        # Map each detected screen bbox to its PDF line index by vertical order for current page
+        # Map each detected screen bbox to its PDF line/block index
         if self.current_page in self.page_line_positions:
-            screen_bboxes.sort(key=lambda r: r.y())
-            self.page_bbox_line_indices[self.current_page] = list(range(len(screen_bboxes)))
+            # Get the appropriate positions based on granularity
+            if self.granularity == "block" and self.current_page in self.page_paragraph_positions:
+                # For blocks: Map detected screen boxes to PDF blocks
+                positions = self.page_paragraph_positions[self.current_page]
+                if positions and self.page_screen_bboxes[self.current_page]:
+                    # Create mapping from screen bbox to paragraph index by finding the best match
+                    bbox_line_indices = []
+                    for bbox in self.page_screen_bboxes[self.current_page]:
+                        # Get bbox center y-coordinate
+                        bbox_center_y = bbox.y() + bbox.height() / 2
+                        
+                        # Find the closest paragraph by vertical position
+                        closest_idx = 0
+                        min_distance = float('inf')
+                        for i, (pdf_y, _) in enumerate(positions):
+                            # Normalize PDF y-coordinate to screen coordinates 
+                            # (approximate, depends on rendering scale)
+                            distance = abs(bbox_center_y - pdf_y * 10)  # Scale factor may need adjustment
+                            if distance < min_distance:
+                                min_distance = distance
+                                closest_idx = i
+                        
+                        bbox_line_indices.append(closest_idx)
+                    
+                    self.logger.info(f"Page {self.current_page}: Block mapping: {bbox_line_indices}")
+                    self.page_bbox_line_indices[self.current_page] = bbox_line_indices
+                else:
+                    self.page_bbox_line_indices[self.current_page] = []
+            else:
+                # For lines: Use a simpler mapping - each screen bbox maps to the line with the same index
+                positions = self.page_line_positions[self.current_page]
+                # Create 1:1 mapping, truncating to the shortest length
+                self.page_bbox_line_indices[self.current_page] = list(range(min(len(self.page_screen_bboxes[self.current_page]), len(positions))))
 
         self.update()
         
@@ -170,11 +313,28 @@ class GazeIndicator(QWidget):
         if self.current_page in self.page_screen_bboxes:
             rect_pen = QPen()
             rect_pen.setWidth(2)
-            rect_pen.setColor(QColor(0, 255, 0))
-            painter.setPen(rect_pen)
             
-            for bbox in self.page_screen_bboxes[self.current_page]:
+            # Different color based on granularity
+            if self.granularity == "block":
+                rect_pen.setColor(QColor(0, 100, 200))  # Blue for blocks
+            else:
+                rect_pen.setColor(QColor(0, 180, 0))    # Green for lines
+                
+            painter.setPen(rect_pen)
+
+            bboxes = self.page_screen_bboxes[self.current_page]
+            self.logger.info(f"Page {self.current_page}: Drawing {len(bboxes)} boxes")
+            # for i, bbox in enumerate(bboxes):
+                # self.logger.info(f"Box {i}: (x={bbox.x()}, y={bbox.y()}, w={bbox.width()}, h={bbox.height()})")
+            for bbox in bboxes:
                 painter.drawRect(bbox)
+                
+                # For blocks, add extra visual cue
+                if self.granularity == "block":
+                    painter.fillRect(
+                        QRect(bbox.x(), bbox.y(), 5, bbox.height()),
+                        QColor(0, 100, 200, 50)  # Semi-transparent blue marker
+                    )
             
         # Draw gaze point
         pen = QPen()
@@ -206,8 +366,15 @@ class GazeIndicator(QWidget):
             return None
             
         page_num, line_idx = line_info
-        if page_num in self.page_line_positions and line_idx < len(self.page_line_positions[page_num]):
-            return (page_num, self.page_line_positions[page_num][line_idx][1])
+        
+        # Use the appropriate positions based on granularity
+        if self.granularity == "block" and page_num in self.page_paragraph_positions:
+            positions = self.page_paragraph_positions[page_num]
+        else:
+            positions = self.page_line_positions.get(page_num, [])
+            
+        if positions and line_idx < len(positions):
+            return (page_num, positions[line_idx][1])
         return None
 
 class MainWindow(QMainWindow):
@@ -293,6 +460,15 @@ class MainWindow(QMainWindow):
         self.font_size_spin.setValue(20)
         self.font_size_spin.valueChanged.connect(self.change_font_size)
         toolbar_layout.addWidget(self.font_size_spin)
+        
+        # Granularity control
+        granularity_label = QLabel("Granularity:")
+        toolbar_layout.addWidget(granularity_label)
+        
+        self.granularity_combo = QComboBox()
+        self.granularity_combo.addItems(["line", "block"])
+        self.granularity_combo.currentTextChanged.connect(self.change_granularity)
+        toolbar_layout.addWidget(self.granularity_combo)
         
         # Enhanced page indicator
         self.page_indicator_widget = QWidget()
@@ -406,6 +582,18 @@ class MainWindow(QMainWindow):
         self.calculate_page_positions()
         self.gaze_indicator.update_bboxes()
         
+    def change_granularity(self, granularity: str):
+        """Change the text detection granularity."""
+        if hasattr(self, 'gaze_indicator'):
+            self.gaze_indicator.set_granularity(granularity)
+            self.status_label.setText(f"Granularity: {granularity}")
+            
+            # Update the UI to indicate the current granularity mode
+            self.granularity_combo.setStyleSheet(f"background-color: {'#d1e7ff' if granularity == 'block' else '#d1ffd1'}")
+            
+            # Force bbox update
+            self.gaze_indicator.update_bboxes()
+        
     def load_calibration(self):
         """Try to load existing calibration model."""
         model_path = os.path.expanduser("~/.readgaze/gaze_model.pkl")
@@ -517,21 +705,27 @@ class MainWindow(QMainWindow):
             label.setMinimumWidth(800)
             label.setText(formatted_text)
             
+            # Add a property to store block mapping
+            label.blockMap = []
+            
             # Add to layout
             self.text_content_layout.addWidget(label)
             self.page_labels.append(label)
             
-            # Get line positions for this page
-            line_positions = self.pdf_document.get_line_positions(page_num)
-            self.gaze_indicator.set_line_positions(page_num, line_positions)
+            # Set the reference to this page's label for the gaze indicator before getting positions
+            self.gaze_indicator.set_text_label(label)
+            
+            # Get line positions for this page (now includes block numbers)
+            line_positions = self.pdf_document.get_line_positions(page_num, "line")
+            self.gaze_indicator.set_line_positions(page_num, line_positions, "line")
+            
+            # Also get block positions
+            block_positions = self.pdf_document.get_line_positions(page_num, "block")
+            self.gaze_indicator.set_line_positions(page_num, block_positions, "block")
         
         # Calculate page positions in the scroll area
         self.calculate_page_positions()
         
-        # Set the reference to the current page's label for the gaze indicator
-        if self.page_labels:
-            self.gaze_indicator.set_text_label(self.page_labels[0])
-    
     def calculate_page_positions(self):
         """Calculate the Y positions of each page in the scroll area."""
         self.page_y_positions = []
@@ -593,6 +787,11 @@ class MainWindow(QMainWindow):
             QTimer.singleShot(300, lambda: self.page_label.setStyleSheet(orig_style))
             # Update gaze indicator's reference to current page
             self.gaze_indicator.set_current_page(most_visible_page)
+            
+            # Ensure label has blockMap property before we set it as text_label
+            if not hasattr(self.page_labels[most_visible_page], 'blockMap'):
+                self.page_labels[most_visible_page].blockMap = []
+                
             self.gaze_indicator.set_text_label(self.page_labels[most_visible_page])
             self.gaze_indicator.update_bboxes()
         
