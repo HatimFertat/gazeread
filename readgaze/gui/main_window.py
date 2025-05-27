@@ -12,7 +12,7 @@ import logging
 import cv2
 import numpy as np
 import re
-from typing import Optional, Dict, Tuple
+from typing import Optional, Dict, Tuple, List
 
 #
 
@@ -242,6 +242,9 @@ class MainWindow(QMainWindow):
         self.line_reading_time = 0
         self.page_line_times = {}  # Dictionary to store reading times for each line by page {page: {line: time}}
         
+        # Track page positions in the scrollable area
+        self.page_y_positions = []  # List of (start_y, end_y) for each page
+        
         # Try to load existing calibration
         self.load_calibration()
         self.logger.info("MainWindow initialized")
@@ -291,17 +294,20 @@ class MainWindow(QMainWindow):
         self.font_size_spin.valueChanged.connect(self.change_font_size)
         toolbar_layout.addWidget(self.font_size_spin)
         
-        # Page navigation controls
-        self.prev_page_button = QPushButton("Previous Page")
-        self.prev_page_button.clicked.connect(self.previous_page)
-        toolbar_layout.addWidget(self.prev_page_button)
+        # Enhanced page indicator
+        self.page_indicator_widget = QWidget()
+        page_indicator_layout = QHBoxLayout(self.page_indicator_widget)
+        page_indicator_layout.setContentsMargins(10, 0, 10, 0)
         
-        self.next_page_button = QPushButton("Next Page")
-        self.next_page_button.clicked.connect(self.next_page)
-        toolbar_layout.addWidget(self.next_page_button)
+        page_icon_label = QLabel("📄")
+        page_icon_label.setStyleSheet("font-size: 16px;")
+        page_indicator_layout.addWidget(page_icon_label)
         
         self.page_label = QLabel("Page: 0/0")
-        toolbar_layout.addWidget(self.page_label)
+        self.page_label.setStyleSheet("font-weight: bold; min-width: 80px;")
+        page_indicator_layout.addWidget(self.page_label)
+        
+        toolbar_layout.addWidget(self.page_indicator_widget)
         
         # Fullscreen button
         self.fullscreen_button = QPushButton("Fullscreen (Enter)")
@@ -319,30 +325,16 @@ class MainWindow(QMainWindow):
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.scroll_area.verticalScrollBar().valueChanged.connect(self.on_scroll_changed)
         
         self.text_content_widget = QWidget()
         self.text_content_layout = QVBoxLayout(self.text_content_widget)
         self.text_content_layout.setContentsMargins(50, 20, 50, 20)
         self.text_content_layout.setAlignment(Qt.AlignmentFlag.AlignHCenter)
         
-        self.text_label = QLabel()
-        self.text_label.setWordWrap(False)
-        self.text_label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
-        self.text_label.setFont(QFont("Arial", 24))
-        self.text_label.setTextFormat(Qt.TextFormat.RichText)
-        self.text_label.setStyleSheet("""
-            QLabel {
-                background-color: white;
-                padding: 40px 60px;
-                line-height: 1.4;
-                color: black;
-            }
-        """)
+        # This will contain all page text labels, one below the other
+        self.page_labels = []
         
-        # Set minimum width for the text label to ensure proper sizing
-        self.text_label.setMinimumWidth(800)
-        
-        self.text_content_layout.addWidget(self.text_label)
         self.scroll_area.setWidget(self.text_content_widget)
         
         # Add scroll area to main layout
@@ -351,7 +343,7 @@ class MainWindow(QMainWindow):
         # Add gaze indicator to the central widget
         self.gaze_indicator = GazeIndicator(self.centralWidget())
         self.gaze_indicator.setGeometry(self.centralWidget().rect())
-        self.gaze_indicator.set_text_label(self.text_label)
+        # We'll set the text label reference when we load the PDF
         self.gaze_indicator.set_scroll_area(self.scroll_area)
         self.gaze_indicator.raise_()
         
@@ -377,10 +369,16 @@ class MainWindow(QMainWindow):
         """Handle keyboard events."""
         if event.key() == Qt.Key.Key_Return or event.key() == Qt.Key.Key_Enter:
             self.toggle_fullscreen()
-        elif event.key() == Qt.Key.Key_Right or event.key() == Qt.Key.Key_Space:
-            self.next_page()
-        elif event.key() == Qt.Key.Key_Left or event.key() == Qt.Key.Key_Backspace:
-            self.previous_page()
+        elif event.key() == Qt.Key.Key_Space:
+            # Page down on space
+            self.scroll_area.verticalScrollBar().setValue(
+                self.scroll_area.verticalScrollBar().value() + self.scroll_area.height() - 100
+            )
+        elif event.key() == Qt.Key.Key_Backspace:
+            # Page up on backspace
+            self.scroll_area.verticalScrollBar().setValue(
+                self.scroll_area.verticalScrollBar().value() - self.scroll_area.height() + 100
+            )
         else:
             super().keyPressEvent(event)
             
@@ -396,23 +394,17 @@ class MainWindow(QMainWindow):
             
     def change_font_size(self, size: int):
         """Change the font size of the text."""
-        font = self.text_label.font()
-        font.setPointSize(size)
-        self.text_label.setFont(font)
-        # Update bounding boxes after font size change
-        self.gaze_indicator.update_bboxes()
-        
-    def next_page(self):
-        """Move to the next page."""
-        if self.pdf_document and self.current_page < self.pdf_document.get_total_pages() - 1:
-            self.current_page += 1
-            self.display_current_page()
+        if not self.page_labels:
+            return
             
-    def previous_page(self):
-        """Move to the previous page."""
-        if self.pdf_document and self.current_page > 0:
-            self.current_page -= 1
-            self.display_current_page()
+        for label in self.page_labels:
+            font = label.font()
+            font.setPointSize(size)
+            label.setFont(font)
+            
+        # Update bounding boxes after font size change
+        self.calculate_page_positions()
+        self.gaze_indicator.update_bboxes()
         
     def load_calibration(self):
         """Try to load existing calibration model."""
@@ -456,70 +448,133 @@ class MainWindow(QMainWindow):
                 self.pdf_document = PDFDocument(file_name)
                 self.current_page = 0
                 
+                # Clear any previous page labels
+                for label in self.page_labels:
+                    self.text_content_layout.removeWidget(label)
+                    label.deleteLater()
+                self.page_labels = []
+                
                 # Initialize page_line_times for all pages
                 self.page_line_times = {}
                 for page in range(self.pdf_document.get_total_pages()):
                     self.page_line_times[page] = {}
                 
-                self.display_current_page()
+                # Load all pages
+                self.load_all_pages()
+                
+                # Update page indicator
+                self.page_label.setText(f"Page: {self.current_page + 1}/{self.pdf_document.get_total_pages()}")
+                
                 self.logger.info(f"Successfully opened PDF: {file_name}")
                 
             except Exception as e:
                 QMessageBox.warning(self, "Error", f"Failed to open PDF: {str(e)}")
                 self.logger.error(f"Failed to open PDF {file_name}: {str(e)}")
-            
-    def display_current_page(self):
+    
+    def load_all_pages(self):
+        """Load all pages of the PDF document at once."""
         if not self.pdf_document:
             return
+        
+        # Create labels for each page
+        for page_num in range(self.pdf_document.get_total_pages()):
+            text = self.pdf_document.get_page_text(page_num)
+            if not text:
+                text = f"[No text content found on page {page_num + 1}]"
+                
+            # Format the text with proper spacing and line breaks
+            formatted_text = text.replace('\n', '<br>')
+            formatted_text = f'''
+                <div style="
+                    font-family: Arial;
+                    line-height: 1.4;
+                    color: black;
+                    text-align: left;
+                    width: 100%;
+                    padding: 40px 60px;
+                    margin-bottom: 20px;
+                    border-bottom: 3px solid #ccc;
+                ">
+                    {formatted_text}
+                </div>
+            '''
             
-        # Get text for the current page
-        text = self.pdf_document.get_page_text(self.current_page)
-        if not text:
-            self.logger.warning(f"No text content found on page {self.current_page}")
-            self.text_label.setText("No text content found on this page.")
+            # Create the label for this page
+            label = QLabel()
+            label.setWordWrap(False)
+            label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
+            label.setFont(QFont("Arial", self.font_size_spin.value()))
+            label.setTextFormat(Qt.TextFormat.RichText)
+            label.setStyleSheet("""
+                QLabel {
+                    background-color: white;
+                    padding: 40px 60px;
+                    line-height: 1.4;
+                    color: black;
+                    margin-bottom: 40px;
+                }
+            """)
+            label.setMinimumWidth(800)
+            label.setText(formatted_text)
+            
+            # Add to layout
+            self.text_content_layout.addWidget(label)
+            self.page_labels.append(label)
+            
+            # Get line positions for this page
+            line_positions = self.pdf_document.get_line_positions(page_num)
+            self.gaze_indicator.set_line_positions(page_num, line_positions)
+        
+        # Calculate page positions in the scroll area
+        self.calculate_page_positions()
+        
+        # Set the reference to the current page's label for the gaze indicator
+        if self.page_labels:
+            self.gaze_indicator.set_text_label(self.page_labels[0])
+    
+    def calculate_page_positions(self):
+        """Calculate the Y positions of each page in the scroll area."""
+        self.page_y_positions = []
+        for i, label in enumerate(self.page_labels):
+            if i > 0:
+                # Get the position from the previous page
+                prev_start, prev_end = self.page_y_positions[i-1]
+                y_start = prev_end + 40  # Add margin between pages
+            else:
+                y_start = 0
+                
+            y_end = y_start + label.height()
+            self.page_y_positions.append((y_start, y_end))
+    
+    def on_scroll_changed(self, value):
+        """Handle scroll position changes to update current page."""
+        if not self.page_y_positions:
             return
             
-        # Format the text with proper spacing and line breaks
-        formatted_text = text.replace('\n', '<br>')
-        formatted_text = f'''
-            <div style="
-                font-family: Arial;
-                line-height: 1.4;
-                color: black;
-                text-align: left;
-                width: 100%;
-                padding: 40px 60px;
-            ">
-                {formatted_text}
-            </div>
-        '''
-        self.text_label.setText(formatted_text)
+        # Find which page is most visible in the viewport
+        viewport_top = value
+        viewport_bottom = value + self.scroll_area.viewport().height()
+        viewport_middle = (viewport_top + viewport_bottom) / 2
         
-        # Update page display
-        self.page_label.setText(f"Page: {self.current_page + 1}/{self.pdf_document.get_total_pages()}")
-        
-        # Inform gaze indicator of new line positions for current page
-        line_positions = self.pdf_document.get_line_positions(self.current_page)
-        self.gaze_indicator.set_current_page(self.current_page)
-        self.gaze_indicator.set_line_positions(self.current_page, line_positions)
-        
-        # Also pre-load adjacent pages for context
-        if self.current_page > 0:
-            prev_page = self.current_page - 1
-            prev_line_positions = self.pdf_document.get_line_positions(prev_page)
-            self.gaze_indicator.set_line_positions(prev_page, prev_line_positions)
-            
-        if self.current_page < self.pdf_document.get_total_pages() - 1:
-            next_page = self.current_page + 1
-            next_line_positions = self.pdf_document.get_line_positions(next_page)
-            self.gaze_indicator.set_line_positions(next_page, next_line_positions)
-        
-        self.logger.info(f"Displayed page {self.current_page}")
-        
+        # Find which page contains the middle of the viewport
+        for i, (y_start, y_end) in enumerate(self.page_y_positions):
+            if y_start <= viewport_middle <= y_end:
+                if i != self.current_page:
+                    self.current_page = i
+                    self.page_label.setText(f"Page: {i + 1}/{self.pdf_document.get_total_pages()}")
+                    # Make page label briefly flash to show page change
+                    orig_style = self.page_label.styleSheet()
+                    self.page_label.setStyleSheet("font-weight: bold; min-width: 80px; color: #2060D0;")
+                    QTimer.singleShot(300, lambda: self.page_label.setStyleSheet(orig_style))
+                    # Update gaze indicator's reference to current page
+                    self.gaze_indicator.set_current_page(i)
+                    self.gaze_indicator.set_text_label(self.page_labels[i])
+                    self.gaze_indicator.update_bboxes()
+                break
+                
     def update_eye_position(self):
         """Update eye position and detect which line is being read."""
-        if not self.eye_tracker.is_connected():
-            self.logger.debug("Eye tracker not connected")
+        if not (self.eye_tracker.is_connected() and self.pdf_document):
             return
             
         gaze_data = self.eye_tracker.get_gaze_point()
@@ -572,11 +627,6 @@ class MainWindow(QMainWindow):
                     f"Accumulated time on line (Page {self.current_line_page+1}) '{self.current_line[:50]}...': "
                     f"{self.page_line_times[self.current_line_page][self.current_line]:.2f}s"
                 )
-                
-                # If moving to a new page, update current page
-                if page_num is not None and page_num != self.current_line_page:
-                    self.current_page = page_num
-                    self.display_current_page()
             
             # Start timing for new line if any
             if new_line is not None and page_num is not None:
