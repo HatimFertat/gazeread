@@ -535,43 +535,67 @@ class MainWindow(QMainWindow):
     def calculate_page_positions(self):
         """Calculate the Y positions of each page in the scroll area."""
         self.page_y_positions = []
+        current_y = 0
+        
         for i, label in enumerate(self.page_labels):
-            if i > 0:
-                # Get the position from the previous page
-                prev_start, prev_end = self.page_y_positions[i-1]
-                y_start = prev_end + 40  # Add margin between pages
-            else:
-                y_start = 0
-                
-            y_end = y_start + label.height()
+            # Get the actual height of the label with all its content
+            height = label.sizeHint().height()
+            y_start = current_y
+            y_end = y_start + height
             self.page_y_positions.append((y_start, y_end))
-    
+            # Update current_y for the next page
+            current_y = y_end + 40  # Add margin between pages
+            
+        # Log page positions for debugging
+        self.logger.info(f"Page positions: {self.page_y_positions}")
+
     def on_scroll_changed(self, value):
         """Handle scroll position changes to update current page."""
-        if not self.page_y_positions:
+        if not self.page_y_positions or not self.pdf_document:
             return
             
         # Find which page is most visible in the viewport
         viewport_top = value
-        viewport_bottom = value + self.scroll_area.viewport().height()
-        viewport_middle = (viewport_top + viewport_bottom) / 2
+        viewport_height = self.scroll_area.viewport().height()
+        viewport_bottom = viewport_top + viewport_height
         
-        # Find which page contains the middle of the viewport
+        # Calculate visibility percentage for each page
+        max_visibility = 0
+        most_visible_page = self.current_page  # Default to current
+        
         for i, (y_start, y_end) in enumerate(self.page_y_positions):
-            if y_start <= viewport_middle <= y_end:
-                if i != self.current_page:
-                    self.current_page = i
-                    self.page_label.setText(f"Page: {i + 1}/{self.pdf_document.get_total_pages()}")
-                    # Make page label briefly flash to show page change
-                    orig_style = self.page_label.styleSheet()
-                    self.page_label.setStyleSheet("font-weight: bold; min-width: 80px; color: #2060D0;")
-                    QTimer.singleShot(300, lambda: self.page_label.setStyleSheet(orig_style))
-                    # Update gaze indicator's reference to current page
-                    self.gaze_indicator.set_current_page(i)
-                    self.gaze_indicator.set_text_label(self.page_labels[i])
-                    self.gaze_indicator.update_bboxes()
-                break
+            # Skip if page is completely outside viewport
+            if y_end < viewport_top or y_start > viewport_bottom:
+                continue
                 
+            # Calculate how much of the page is visible
+            visible_top = max(viewport_top, y_start)
+            visible_bottom = min(viewport_bottom, y_end)
+            visible_height = visible_bottom - visible_top
+            
+            # Calculate as percentage of viewport height
+            visibility_percent = (visible_height / viewport_height) * 100
+            
+            self.logger.debug(f"Page {i+1} visibility: {visibility_percent:.1f}%")
+            
+            # Update most visible page
+            if visibility_percent > max_visibility:
+                max_visibility = visibility_percent
+                most_visible_page = i
+        
+        # Update current page if changed
+        if most_visible_page != self.current_page:
+            self.current_page = most_visible_page
+            self.page_label.setText(f"Page: {most_visible_page + 1}/{self.pdf_document.get_total_pages()}")
+            # Make page label briefly flash to show page change
+            orig_style = self.page_label.styleSheet()
+            self.page_label.setStyleSheet("font-weight: bold; min-width: 80px; color: #2060D0;")
+            QTimer.singleShot(300, lambda: self.page_label.setStyleSheet(orig_style))
+            # Update gaze indicator's reference to current page
+            self.gaze_indicator.set_current_page(most_visible_page)
+            self.gaze_indicator.set_text_label(self.page_labels[most_visible_page])
+            self.gaze_indicator.update_bboxes()
+        
     def update_eye_position(self):
         """Update eye position and detect which line is being read."""
         if not (self.eye_tracker.is_connected() and self.pdf_document):
