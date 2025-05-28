@@ -323,7 +323,7 @@ class GazeIndicator(QWidget):
             painter.setPen(rect_pen)
 
             bboxes = self.page_screen_bboxes[self.current_page]
-            self.logger.info(f"Page {self.current_page}: Drawing {len(bboxes)} boxes")
+            # self.logger.info(f"Page {self.current_page}: Drawing {len(bboxes)} boxes")
             # for i, bbox in enumerate(bboxes):
                 # self.logger.info(f"Box {i}: (x={bbox.x()}, y={bbox.y()}, w={bbox.width()}, h={bbox.height()})")
             for bbox in bboxes:

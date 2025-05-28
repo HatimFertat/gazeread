@@ -8,7 +8,7 @@ from typing import Optional, Tuple, Literal
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="eyetrax.filters.kde")
 
 from eyetrax.gaze import GazeEstimator
-from eyetrax.calibration import *
+from eyetrax.calibration import run_9_point_calibration
 from eyetrax.filters import KalmanSmoother, KDESmoother, NoSmoother, make_kalman
 from eyetrax.utils.screen import get_screen_size
 
@@ -103,7 +103,6 @@ class EyeTracker:
             features, is_blinking = self.estimator.extract_features(frame)
             
             if features is None:
-                self.logger.debug("No features extracted from frame")
                 return None
                 
             # Predict screen coordinates
