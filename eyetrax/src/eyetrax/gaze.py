@@ -16,6 +16,20 @@ import numpy as np
 from eyetrax.constants import LEFT_EYE_INDICES, MUTUAL_INDICES, RIGHT_EYE_INDICES
 from eyetrax.models import BaseModel, create_model
 
+
+# Add CNN directory to path
+cnn_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "cnn")
+sys.path.append(cnn_dir)
+
+# Import CNN modules directly with explicit imports
+import cnn.utils as cnn_utils
+import cnn.mpii_face_gaze_preprocessing as cnn_preprocessing
+from cnn.model import Model
+from .face_model import create_face_model
+
+# Set up logger
+logger = logging.getLogger(__name__)
+
 class GazeEstimator:
     def __init__(
         self,
@@ -137,19 +151,6 @@ class GazeEstimator:
         """
         return self.model.predict(X)
 
-
-# Add CNN directory to path
-cnn_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "cnn")
-sys.path.append(cnn_dir)
-
-# Import CNN modules directly with explicit imports
-import cnn.utils as cnn_utils
-import cnn.mpii_face_gaze_preprocessing as cnn_preprocessing
-from cnn.model import Model
-from .face_model import create_face_model
-
-# Set up logger
-logger = logging.getLogger(__name__)
 
 # Define the landmarks IDs used by the model
 # These correspond to specific points on the face model:
@@ -498,6 +499,78 @@ class CNNGazeEstimator:
             self.logger.error(f"Error in feature extraction: {e}")
             return None, False
         
+    def predict_(self, features_batch):
+        """Predict gaze points from features.
+        
+        Args:
+            features_batch: List of feature dictionaries from extract_features
+            
+        Returns:
+            List of screen coordinates (x, y)
+        """
+        import torch
+        
+        results = []
+        self.frame_count += 1
+        
+        for features in features_batch:
+            if features is None:
+                results.append((0, 0))
+                continue
+                
+            face_center = features['face_center']
+            rotation_matrix = features['rotation_matrix']
+            
+            # Prepare inputs for CNN
+            person_idx = torch.Tensor([0]).unsqueeze(0).long().to(self.device)
+            full_face_image = self.transform(image=features['full_face'])["image"].unsqueeze(0).float().to(self.device)
+            left_eye_image = self.transform(image=features['left_eye'])["image"].unsqueeze(0).float().to(self.device)
+            right_eye_image = self.transform(image=features['right_eye'])["image"].unsqueeze(0).float().to(self.device)
+            
+            # Get prediction from model
+            with torch.no_grad():
+                output = self.model(person_idx, full_face_image, right_eye_image, left_eye_image).squeeze(0).detach().cpu().numpy()
+                
+            # Convert 2D gaze to 3D vector
+            gaze_vector_3d_normalized = cnn_utils.gaze_2d_to_3d(output)
+            gaze_vector = np.dot(np.linalg.inv(rotation_matrix), gaze_vector_3d_normalized)
+            
+            # Smooth gaze vector
+            self.gaze_vector_buffer.append(gaze_vector)
+            if len(self.gaze_vector_buffer) > 10:
+                self.gaze_vector_buffer.pop(0)
+            gaze_vector = np.mean(self.gaze_vector_buffer, axis=0)
+            
+            # # Get plane parameters
+            # plane_w = self.plane[0:3]
+            # plane_b = self.plane[3]
+            
+            # # Get intersection with screen (raw CNN prediction)
+            # result = cnn_utils.ray_plane_intersection(face_center.reshape(3), gaze_vector, plane_w, plane_b)
+            # raw_point_on_screen = cnn_utils.get_point_on_screen(self.monitor_mm, self.monitor_pixels, result)
+            
+            # Apply wrapper model adjustment if calibrated
+            if self.is_calibrated:
+                adjusted_point = self.wrapper_model.predict_adjusted(gaze_vector)
+                final_point = adjusted_point
+            else:
+                final_point = gaze_vector
+            
+            # # Log movement every few frames
+            # if self.last_gaze_point is not None and self.frame_count % 30 == 0:
+            #     dx = final_point[0] - self.last_gaze_point[0]
+            #     dy = final_point[1] - self.last_gaze_point[1]
+            #     distance = np.sqrt(dx*dx + dy*dy)
+            #     if distance > 5:  # Only log significant movements
+            #         self.logger.info(f"Gaze moved: ({self.last_gaze_point[0]}, {self.last_gaze_point[1]}) -> "
+            #                         f"({final_point[0]}, {final_point[1]}), distance: {distance:.1f}px")
+            
+            # self.last_gaze_point = final_point
+            results.append(final_point)
+            
+        return results
+        
+        
     def predict(self, features_batch):
         """Predict gaze points from features.
         
@@ -544,16 +617,16 @@ class CNNGazeEstimator:
             plane_w = self.plane[0:3]
             plane_b = self.plane[3]
             
-            # Get intersection with screen
+            # Get intersection with screen (raw CNN prediction)
             result = cnn_utils.ray_plane_intersection(face_center.reshape(3), gaze_vector, plane_w, plane_b)
-            point_on_screen = cnn_utils.get_point_on_screen(self.monitor_mm, self.monitor_pixels, result)
+            raw_point_on_screen = cnn_utils.get_point_on_screen(self.monitor_mm, self.monitor_pixels, result)
             
             # Apply wrapper model adjustment if calibrated
             if self.is_calibrated:
-                adjusted_point = self.wrapper_model.predict_adjusted(point_on_screen)
+                adjusted_point = self.wrapper_model.predict_adjusted(raw_point_on_screen)
                 final_point = adjusted_point
             else:
-                final_point = point_on_screen
+                final_point = raw_point_on_screen
             
             # Log movement every few frames
             if self.last_gaze_point is not None and self.frame_count % 30 == 0:
@@ -687,7 +760,7 @@ class CNNGazeEstimator:
         Calibrate the wrapper model using collected samples.
         
         Args:
-            features: List of feature dictionaries from extract_features
+            features: List of raw CNN predictions (point_on_screen coordinates)
             targets: List of target coordinates (ground truth)
             
         Returns:
@@ -699,15 +772,10 @@ class CNNGazeEstimator:
             
         self.logger.info(f"Calibrating wrapper model with {len(features)} samples")
         
-        # Process each feature to get CNN predictions
-        raw_predictions = []
-        for feature in features:
-            pred = self.predict([feature])[0]  # Get raw CNN prediction without wrapper adjustment
-            raw_predictions.append(pred)
-            
-        # Train the wrapper model with raw predictions and targets
-        for pred, target in zip(raw_predictions, targets):
-            self.wrapper_model.collect_training_sample(pred, target)
+        # The features are already raw CNN predictions (point_on_screen), 
+        # so we can directly train the wrapper model
+        for raw_pred, target in zip(features, targets):
+            self.wrapper_model.collect_training_sample(raw_pred, target)
             
         # Train the model from collected samples
         success = self.wrapper_model.train_from_collected()
@@ -763,4 +831,27 @@ class CNNGazeEstimator:
         except Exception as e:
             self.logger.error(f"Error loading wrapper model: {e}")
             return False
+
+    def get_raw_prediction(self, features):
+        """
+        Get raw CNN prediction without wrapper adjustment.
+        Used for calibration purposes.
+        
+        Args:
+            features: Feature dictionary from extract_features
+            
+        Returns:
+            Raw screen coordinates prediction
+        """
+        # Temporarily disable calibration
+        original_is_calibrated = self.is_calibrated
+        self.is_calibrated = False
+        
+        # Get raw prediction
+        raw_prediction = self.predict([features])[0]
+        
+        # Restore calibration state
+        self.is_calibrated = original_is_calibrated
+        
+        return raw_prediction
 

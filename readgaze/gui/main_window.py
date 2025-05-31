@@ -442,7 +442,6 @@ class MainWindow(QMainWindow):
         dpr = screen.devicePixelRatio()                  # typically 2.0 on Retina
         logical_size = screen.geometry()                 # QRect of logical pixels, e.g. 1280×800
         physical_size = screen.size()                    # QSize in device pixels, e.g. 2560×1600
-        self.logger.info(f"[QT] devicePixelRatio = {dpr}, logical = {logical_size.width()}×{logical_size.height()}, physical = {physical_size.width()}×{physical_size.height()}")
         if hasattr(self, 'gaze_indicator'):
             self.gaze_indicator.setGeometry(self.centralWidget().rect())
         super().resizeEvent(event)
@@ -549,7 +548,6 @@ class MainWindow(QMainWindow):
         self.gaze_indicator.setGeometry(self.centralWidget().rect())
         gw = self.gaze_indicator.geometry()
         gw_global_topleft = self.gaze_indicator.mapToGlobal(QPoint(0,0))
-        self.logger.info(f"GazeIndicator geometry (local): {gw.getRect()}, global top-left: {gw_global_topleft}")
         
         # We'll set the text label reference when we load the PDF
         self.gaze_indicator.set_scroll_area(self.scroll_area)

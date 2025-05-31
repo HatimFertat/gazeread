@@ -41,23 +41,52 @@ class CNNWrapperModel(BaseModel):
         self.cnn_outputs: List[np.ndarray] = []
         self.targets: List[np.ndarray] = []
         
+        # Flag to track if dimensions changed
+        self.input_dim = None
+        
+        # Override the scaler with identity scaler since we're working with screen coordinates
+        self.use_scaling = False
+        
     def _init_native(self, **kwargs):
         """Initialize the base model."""
         self.model = create_model(self.base_model_name, **self.base_model_kwargs)
         self.logger.info(f"Created base model: {self.base_model_name}")
+        
+    def _scale_features(self, X: np.ndarray) -> np.ndarray:
+        """Override to bypass scaling since inputs are already screen coordinates."""
+        return X
+        
+    def _unscale_predictions(self, y: np.ndarray) -> np.ndarray:
+        """Override to bypass unscaling since outputs should be screen coordinates."""
+        return y
         
     def _native_train(self, X: np.ndarray, y: np.ndarray):
         """
         Train the base model using CNN outputs as features.
         For this wrapper, X should be CNN outputs and y should be the target coordinates.
         """
-        self.logger.info(f"Training base model with {len(X)} samples")
+        # Store the input dimension for future reference
+        self.input_dim = X.shape[1]
+        self.logger.info(f"Training base model with {len(X)} samples, input dim: {self.input_dim}")
+        
+        # Train the model with raw coordinates
         self.model.train(X, y)
     
     def _native_predict(self, X: np.ndarray) -> np.ndarray:
         """
         Predict using the base model, with CNN outputs as input features.
         """
+        # Check if dimensions match what we trained with
+        if self.input_dim is not None and X.shape[1] != self.input_dim:
+            self.logger.warning(f"Input dimension mismatch: got {X.shape[1]}, expected {self.input_dim}")
+            # Adapt input to match expected dimensions
+            if X.shape[1] == 2 and self.input_dim == 3:
+                # Add a zero column for compatibility with older models
+                X = np.hstack([X, np.zeros((X.shape[0], 1))])
+            elif X.shape[1] == 3 and self.input_dim == 2:
+                # Remove the last column
+                X = X[:, :2]
+        
         return self.model.predict(X)
     
     def collect_training_sample(self, cnn_output: np.ndarray, target: np.ndarray):
@@ -80,7 +109,7 @@ class CNNWrapperModel(BaseModel):
         X = np.array(self.cnn_outputs)
         y = np.array(self.targets)
         
-        self.logger.info(f"Training model with {len(X)} collected samples")
+        self.logger.info(f"Training model with {len(X)} collected samples, input shape: {X.shape}")
         self.train(X, y)
         
         # Clear collected data after training

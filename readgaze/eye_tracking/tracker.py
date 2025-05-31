@@ -33,8 +33,10 @@ class EyeTrackerCNN:
             )
             self.calibrated = False  # Start uncalibrated by default
             self.connected = True
+            self.filter_type: FilterType = "none"
+            self.screen_width, self.screen_height = get_screen_size()
             self.logger.info("CNN estimator initialized successfully")
-            
+
             # Try to load wrapper model if path provided
             if wrapper_model_path and os.path.exists(wrapper_model_path):
                 if self.estimator.load_wrapper_model(wrapper_model_path):
@@ -59,8 +61,20 @@ class EyeTrackerCNN:
         return self.connected and self.estimator is not None
     
     def set_filter(self, filter_type: FilterType):
-        """CNN implementation doesn't use additional filtering."""
-        self.logger.info("CNN implementation doesn't use additional filtering")
+        """Set the filter type for gaze smoothing."""
+        self.filter_type = filter_type
+        
+        if filter_type == "kalman":
+            kalman = make_kalman()
+            self.smoother = KalmanSmoother(kalman)
+            if self.calibrated:
+                # Tune the Kalman filter with the current estimator
+                self.smoother.tune(self.estimator, camera_index=0)
+        elif filter_type == "kde":
+            self.smoother = KDESmoother(self.screen_width, self.screen_height, confidence=0.8)
+        else:
+            self.smoother = NoSmoother()
+            
         return True
     
     def calibrate(self) -> bool:
@@ -155,6 +169,11 @@ class EyeTrackerCNN:
                 if success:
                     self.calibrated = True
                     self.logger.info(f"Loaded wrapper model from {path}")
+                    
+                    # If using Kalman filter, tune it after loading
+                    if self.filter_type == "kalman":
+                        self.smoother.tune(self.estimator, camera_index=0)
+
                     return True
                 else:
                     self.logger.warning("Failed to load wrapper model")
