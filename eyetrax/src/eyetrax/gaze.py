@@ -38,6 +38,7 @@ class GazeEstimator:
         ear_history_len: int = 50,
         blink_threshold_ratio: float = 0.8,
         min_history: int = 15,
+        use_robust_features: bool = False,
     ):
         self.face_mesh = mp.solutions.face_mesh.FaceMesh(
             static_image_mode=False,
@@ -50,8 +51,195 @@ class GazeEstimator:
         self._ear_history = deque(maxlen=ear_history_len)
         self._blink_ratio = blink_threshold_ratio
         self._min_history = min_history
+        self.use_robust_features = use_robust_features
+        
+        # Initialize camera matrix and distortion coefficients with defaults
+        # These will be overridden if a calibration file is available
+        self.camera_matrix = np.array([
+            [1000, 0, 640],
+            [0, 1000, 360],
+            [0, 0, 1]
+        ])
+        self.dist_coefficients = np.zeros((1, 5))
+        
+        # Try to load camera calibration if available
+        self._try_load_camera_calibration()
+        
+        # Initialize buffers for pose estimation and smoothing
+        self.rvec_buffer = deque(maxlen=3)
+        self.tvec_buffer = deque(maxlen=3)
+        self.rvec = None
+        self.tvec = None
+        
+    def _try_load_camera_calibration(self):
+        """Attempt to load camera calibration from standard locations"""
+        cnn_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "cnn")
+        calibration_path = os.path.join(cnn_dir, "calibration_matrix.yaml")
+        
+        try:
+            if os.path.exists(calibration_path):
+                from cnn.utils import get_camera_matrix
+                self.camera_matrix, self.dist_coefficients = get_camera_matrix(calibration_path)
+                logger.info(f"Loaded camera calibration from {calibration_path}")
+            else:
+                logger.warning("Camera calibration file not found, using defaults")
+        except Exception as e:
+            logger.warning(f"Failed to load camera calibration: {e}")
+    
+    def extract_features_robust(self, image):
+        """
+        Enhanced feature extraction using the complex face model and camera calibration
+        
+        Args:
+            image: Input frame for feature extraction
+            
+        Returns:
+            features: Feature vector for gaze estimation or None if extraction failed
+            blink_detected: Boolean indicating if a blink was detected
+        """
+        # Convert image to RGB for MediaPipe
+        image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        height, width, _ = image.shape
+        
+        # Process with face mesh
+        results = self.face_mesh.process(image_rgb)
+        
+        if not results.multi_face_landmarks:
+            return None, False
+            
+        face_landmarks = results.multi_face_landmarks[0]
+        landmarks = face_landmarks.landmark
+        
+        # Extract all points as numpy array (for PnP later)
+        all_points = np.array(
+            [(lm.x * width, lm.y * height) for lm in landmarks], dtype=np.float32
+        )
+        
+        # ---- BLINK DETECTION (from simple method) ----
+        left_eye_inner = np.array([landmarks[133].x, landmarks[133].y])
+        left_eye_outer = np.array([landmarks[33].x, landmarks[33].y])
+        left_eye_top = np.array([landmarks[159].x, landmarks[159].y])
+        left_eye_bottom = np.array([landmarks[145].x, landmarks[145].y])
 
-    def extract_features(self, image):
+        right_eye_inner = np.array([landmarks[362].x, landmarks[362].y])
+        right_eye_outer = np.array([landmarks[263].x, landmarks[263].y])
+        right_eye_top = np.array([landmarks[386].x, landmarks[386].y])
+        right_eye_bottom = np.array([landmarks[374].x, landmarks[374].y])
+
+        left_eye_width = np.linalg.norm(left_eye_outer - left_eye_inner)
+        left_eye_height = np.linalg.norm(left_eye_top - left_eye_bottom)
+        left_EAR = left_eye_height / (left_eye_width + 1e-9)
+
+        right_eye_width = np.linalg.norm(right_eye_outer - right_eye_inner)
+        right_eye_height = np.linalg.norm(right_eye_top - right_eye_bottom)
+        right_EAR = right_eye_height / (right_eye_width + 1e-9)
+
+        EAR = (left_EAR + right_EAR) / 2
+
+        self._ear_history.append(EAR)
+        if len(self._ear_history) >= self._min_history:
+            thr = float(np.mean(self._ear_history)) * self._blink_ratio
+        else:
+            thr = 0.2
+        blink_detected = EAR < thr
+        
+        # ---- ADVANCED POSE ESTIMATION using PnP ----
+        # Use landmarks_ids from face_model to extract specific landmarks for PnP
+        try:
+            face_landmarks_subset = np.asarray([all_points[i] for i in landmarks_ids])
+            
+            # Solve PnP to get head pose
+            success, rvec, tvec = cv2.solvePnP(
+                face_model, face_landmarks_subset,
+                self.camera_matrix, self.dist_coefficients,
+                flags=cv2.SOLVEPNP_EPNP,
+                useExtrinsicGuess=bool(self.rvec is not None)
+            )
+            
+            if not success:
+                # Try iterative method as fallback
+                success, rvec, tvec = cv2.solvePnP(
+                    face_model, face_landmarks_subset,
+                    self.camera_matrix, self.dist_coefficients,
+                    flags=cv2.SOLVEPNP_ITERATIVE
+                )
+                
+                if not success:
+                    # Fall back to simple method if both attempts fail
+                    return self.extract_features_simple(image)
+                    
+            # Refine pose estimation
+            for _ in range(3):
+                success, rvec, tvec = cv2.solvePnP(
+                    face_model, face_landmarks_subset,
+                    self.camera_matrix, self.dist_coefficients,
+                    rvec=rvec, tvec=tvec,
+                    useExtrinsicGuess=True,
+                    flags=cv2.SOLVEPNP_ITERATIVE
+                )
+                
+            # Smooth pose parameters
+            self.rvec_buffer.append(rvec)
+            if len(self.rvec_buffer) > 0:
+                rvec = np.mean(self.rvec_buffer, axis=0)
+                
+            self.tvec_buffer.append(tvec)
+            if len(self.tvec_buffer) > 0:
+                tvec = np.mean(self.tvec_buffer, axis=0)
+                
+            self.rvec, self.tvec = rvec, tvec
+            
+            # Get rotation matrix from rodrigues
+            rotation_matrix, _ = cv2.Rodrigues(rvec)
+            
+            # ---- COMBINE FEATURES FROM BOTH METHODS ----
+            # Get key eye landmarks as in simple method
+            subset_indices = LEFT_EYE_INDICES + RIGHT_EYE_INDICES + MUTUAL_INDICES
+            
+            # Transform eye landmarks to a normalized space (as in simple method)
+            nose_anchor = all_points[4]  # Nose tip
+            
+            # Use rotation matrix from PnP for better normalization
+            # Convert pixel coordinates to camera coordinates first
+            fx, fy = self.camera_matrix[0, 0], self.camera_matrix[1, 1]
+            cx, cy = self.camera_matrix[0, 2], self.camera_matrix[1, 2]
+            
+            # Extract and normalize eye landmarks
+            eye_landmarks = []
+            for idx in subset_indices:
+                x, y = all_points[idx]
+                # Convert to normalized camera coordinates
+                x_norm = (x - cx) / fx
+                y_norm = (y - cy) / fy
+                z_norm = 1.0  # Assume points are on a plane at z=1
+                
+                # Apply inverse rotation to normalize orientation
+                point_cam = np.array([x_norm, y_norm, z_norm])
+                normalized_point = rotation_matrix.T @ point_cam
+                
+                eye_landmarks.append(normalized_point)
+                
+            eye_landmarks = np.array(eye_landmarks)
+            
+            # Extract Euler angles from rotation matrix for additional features
+            # Convert rotation matrix to Euler angles
+            yaw = np.arctan2(rotation_matrix[1, 0], rotation_matrix[0, 0])
+            pitch = np.arctan2(-rotation_matrix[2, 0], 
+                              np.sqrt(rotation_matrix[2, 1]**2 + rotation_matrix[2, 2]**2))
+            roll = np.arctan2(rotation_matrix[2, 1], rotation_matrix[2, 2])
+            
+            # Flatten eye landmarks and combine with head pose
+            flattened_landmarks = eye_landmarks.flatten()
+            features = np.concatenate([flattened_landmarks, [yaw, pitch, roll]])
+            
+            return features, blink_detected
+            
+        except Exception as e:
+            logger.warning(f"Error in robust feature extraction: {e}")
+            # Fall back to simple method if anything fails
+            return self.extract_features_simple(image)
+
+    def extract_features_simple(self, image):
         """
         Takes in image and returns landmarks around the eye region
         Normalization with nose tip as anchor
@@ -129,6 +317,12 @@ class GazeEstimator:
         blink_detected = EAR < thr
 
         return features, blink_detected
+    
+    def extract_features(self, image):
+        if self.use_robust_features:
+            return self.extract_features_robust(image)
+        else:
+            return self.extract_features_simple(image)
 
     def save_model(self, path: str | Path):
         """
@@ -350,7 +544,6 @@ class CNNGazeEstimator:
             self.logger.error("Camera not calibrated")
             return None, False
             
-        import torch
         
         height, width, _ = frame.shape
         image_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)

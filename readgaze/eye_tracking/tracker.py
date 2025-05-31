@@ -198,7 +198,7 @@ class EyeTrackerCNN:
 class EyeTracker:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
-        self.estimator = GazeEstimator()
+        self.estimator = GazeEstimator(model_name="ridge", use_robust_features=True)
         self.camera = None
         self.connected = False
         self.calibrated = False

@@ -89,7 +89,7 @@ class GazeIndicator(QWidget):
         """Update gaze point and convert to local coordinates."""
         local_pt = self.mapFromGlobal(QPoint(x, y))
         self.gaze_point = (local_pt.x(), local_pt.y())
-        self.logger.info(f"[DEBUG] Raw: {x}, {y}, Local: {local_pt.x()}, {local_pt.y()}")
+        # self.logger.info(f"[DEBUG] Raw: {x}, {y}, Local: {local_pt.x()}, {local_pt.y()}")
         self.update()
         
     def set_granularity(self, granularity: str):
