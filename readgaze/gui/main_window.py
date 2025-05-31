@@ -5,7 +5,7 @@ from PyQt6.QtCore import Qt, QTimer, QRect, QPoint, QSize
 from PyQt6.QtGui import QFont, QTextDocument, QPainter, QColor, QPen, QKeyEvent, QPixmap, QImage, QFontMetrics
 import os
 import time
-from ..eye_tracking.tracker import EyeTracker, FilterType
+from ..eye_tracking.tracker import EyeTracker, FilterType, EyeTrackerCNN
 from ..pdf.document import PDFDocument
 from ..ai.assistant import AIAssistant
 import logging
@@ -89,6 +89,7 @@ class GazeIndicator(QWidget):
         """Update gaze point and convert to local coordinates."""
         local_pt = self.mapFromGlobal(QPoint(x, y))
         self.gaze_point = (local_pt.x(), local_pt.y())
+        self.logger.info(f"[DEBUG] Raw: {x}, {y}, Local: {local_pt.x()}, {local_pt.y()}")
         self.update()
         
     def set_granularity(self, granularity: str):
@@ -378,7 +379,7 @@ class GazeIndicator(QWidget):
         return None
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, use_cnn=False, model_path=None, calibration_path=None, wrapper_model_path=None, wrapper_model_name="ridge"):
         super().__init__()
         # Set up logger
         self.logger = logging.getLogger(__name__)
@@ -388,14 +389,32 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(1024, 768)  # Increased default size
         
         # Initialize components
-        self.eye_tracker = EyeTracker()
+        self.use_cnn = use_cnn
+        self.model_path = model_path
+        self.calibration_path = calibration_path
+        self.wrapper_model_path = wrapper_model_path
+        self.wrapper_model_name = wrapper_model_name
+        
+        if use_cnn:
+            self.logger.info(f"Initializing with CNN model. Model: {model_path}, Calibration: {calibration_path}, Wrapper: {wrapper_model_path}")
+            self.eye_tracker = EyeTrackerCNN(
+                model_path=model_path, 
+                calibration_path=calibration_path,
+                wrapper_model_path=wrapper_model_path,
+                wrapper_model_name=wrapper_model_name
+            )
+            if self.eye_tracker.calibrated:
+                self.logger.info("CNN model loaded with wrapper model")
+        else:
+            self.eye_tracker = EyeTracker()
+            
         self.pdf_document = None
         self.current_page = 0
         self.is_fullscreen = False
         
         # Setup UI
         self.setup_ui()
-        
+
         # Setup eye tracking timer
         self.tracking_timer = QTimer()
         self.tracking_timer.timeout.connect(self.update_eye_position)
@@ -418,6 +437,12 @@ class MainWindow(QMainWindow):
         
     def resizeEvent(self, event):
         """Handle window resize events."""
+        # anywhere after the window has been shown (e.g. in showEvent or resizeEvent):
+        screen = self.window().screen()                  # QScreen for this window
+        dpr = screen.devicePixelRatio()                  # typically 2.0 on Retina
+        logical_size = screen.geometry()                 # QRect of logical pixels, e.g. 1280×800
+        physical_size = screen.size()                    # QSize in device pixels, e.g. 2560×1600
+        self.logger.info(f"[QT] devicePixelRatio = {dpr}, logical = {logical_size.width()}×{logical_size.height()}, physical = {physical_size.width()}×{physical_size.height()}")
         if hasattr(self, 'gaze_indicator'):
             self.gaze_indicator.setGeometry(self.centralWidget().rect())
         super().resizeEvent(event)
@@ -440,6 +465,9 @@ class MainWindow(QMainWindow):
         # Calibration button
         self.calibrate_button = QPushButton("Calibrate Eye Tracker")
         self.calibrate_button.clicked.connect(self.calibrate_eye_tracker)
+        # Update tooltip for CNN models
+        if self.use_cnn:
+            self.calibrate_button.setToolTip("Adjust CNN model for your specific gaze pattern")
         toolbar_layout.addWidget(self.calibrate_button)
         
         # Filter selection
@@ -519,6 +547,10 @@ class MainWindow(QMainWindow):
         # Add gaze indicator to the central widget
         self.gaze_indicator = GazeIndicator(self.centralWidget())
         self.gaze_indicator.setGeometry(self.centralWidget().rect())
+        gw = self.gaze_indicator.geometry()
+        gw_global_topleft = self.gaze_indicator.mapToGlobal(QPoint(0,0))
+        self.logger.info(f"GazeIndicator geometry (local): {gw.getRect()}, global top-left: {gw_global_topleft}")
+        
         # We'll set the text label reference when we load the PDF
         self.gaze_indicator.set_scroll_area(self.scroll_area)
         self.gaze_indicator.raise_()
@@ -596,7 +628,24 @@ class MainWindow(QMainWindow):
         
     def load_calibration(self):
         """Try to load existing calibration model."""
-        model_path = os.path.expanduser("~/.readgaze/gaze_model.pkl")
+        if self.use_cnn:
+            # Try to load CNN wrapper model
+            wrapper_path = os.path.expanduser("./weights/cnn_wrapper_model.pkl")
+            if os.path.exists(wrapper_path) and hasattr(self.eye_tracker.estimator, "load_wrapper_model"):
+                if self.eye_tracker.estimator.load_wrapper_model(wrapper_path):
+                    self.eye_tracker.calibrated = True
+                    self.status_label.setText("Eye tracker: Connected with calibrated CNN model")
+                    return
+            
+            # If no wrapper file or loading failed, use default
+            if self.eye_tracker.calibrated:
+                self.status_label.setText("Eye tracker: Connected with CNN model")
+            else:
+                self.status_label.setText("Eye tracker: CNN model (needs calibration)")
+            return
+            
+        # For standard model, try to load from default location
+        model_path = os.path.expanduser("./weights/gaze_model.pkl")
         if os.path.exists(model_path):
             if self.eye_tracker.load_model(model_path):
                 self.status_label.setText("Eye tracker: Connected and calibrated")
@@ -605,10 +654,24 @@ class MainWindow(QMainWindow):
         
     def save_calibration(self):
         """Save the current calibration model."""
-        os.makedirs(os.path.expanduser("~/.readgaze"), exist_ok=True)
-        model_path = os.path.expanduser("~/.readgaze/gaze_model.pkl")
+        if self.use_cnn:
+            # Try to save CNN wrapper model
+            os.makedirs(os.path.expanduser("./weights"), exist_ok=True)
+            wrapper_path = os.path.expanduser("./weights/cnn_wrapper_model.pkl")
+            if self.eye_tracker.save_model(wrapper_path):
+                self.status_label.setText("Eye tracker: Connected with calibrated CNN model")
+                return True
+            else:
+                self.status_label.setText("Eye tracker: Connected with CNN model (wrapper not saved)")
+                return False
+            
+        # For standard model, save to default location
+        os.makedirs(os.path.expanduser("./weights"), exist_ok=True)
+        model_path = os.path.expanduser("./weights/gaze_model.pkl")
         if self.eye_tracker.save_model(model_path):
             self.status_label.setText("Eye tracker: Connected and calibrated")
+            return True
+        return False
             
     def calibrate_eye_tracker(self):
         """Start the eye tracker calibration process."""
@@ -619,7 +682,10 @@ class MainWindow(QMainWindow):
         # Start calibration
         if self.eye_tracker.calibrate():
             self.save_calibration()
-            QMessageBox.information(self, "Success", "Calibration completed successfully!")
+            if self.use_cnn:
+                QMessageBox.information(self, "Success", "CNN calibration completed! Wrapper model trained to adjust CNN output.")
+            else:
+                QMessageBox.information(self, "Success", "Calibration completed successfully!")
         else:
             QMessageBox.warning(self, "Error", "Calibration failed. Please try again.")
             

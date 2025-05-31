@@ -1,0 +1,11 @@
+torchvision
+numpy
+opencv_python
+torch
+albumentations
+matplotlib
+mediapipe
+screeninfo
+pytorch_lightning
+PyYAML
+pyobjc-framework-quartz

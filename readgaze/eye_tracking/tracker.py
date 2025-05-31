@@ -4,15 +4,177 @@ import time
 import numpy as np
 import warnings
 import logging
-from typing import Optional, Tuple, Literal
+import os
+import re
+from typing import Optional, Tuple, Literal, List, Dict, Any
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="eyetrax.filters.kde")
 
-from eyetrax.gaze import GazeEstimator
-from eyetrax.calibration import run_9_point_calibration
+from eyetrax.gaze import GazeEstimator, CNNGazeEstimator
+from eyetrax.calibration import run_9_point_calibration, run_9_point_calibration_cnn
 from eyetrax.filters import KalmanSmoother, KDESmoother, NoSmoother, make_kalman
 from eyetrax.utils.screen import get_screen_size
 
 FilterType = Literal["none", "kalman", "kde"]
+
+class EyeTrackerCNN:
+    """CNN-based eye tracker that directly uses CNNGazeEstimator like in the test script."""
+    
+    def __init__(self, model_path=None, calibration_path=None, wrapper_model_path=None, wrapper_model_name="ridge"):
+        self.logger = logging.getLogger(__name__)
+        self.logger.info("Initializing CNN-based eye tracker")
+        
+        # Initialize CNN estimator with direct camera access
+        try:
+            self.estimator = CNNGazeEstimator(
+                model_path, 
+                calibration_path, 
+                use_direct_camera=True,
+                wrapper_model_name=wrapper_model_name
+            )
+            self.calibrated = False  # Start uncalibrated by default
+            self.connected = True
+            self.logger.info("CNN estimator initialized successfully")
+            
+            # Try to load wrapper model if path provided
+            if wrapper_model_path and os.path.exists(wrapper_model_path):
+                if self.estimator.load_wrapper_model(wrapper_model_path):
+                    self.calibrated = True
+                    self.logger.info(f"Loaded wrapper model from {wrapper_model_path}")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to initialize CNN estimator: {e}")
+            self.estimator = None
+            self.calibrated = False
+            self.connected = False
+    
+    def connect(self) -> bool:
+        """Connection is handled directly by CNNGazeEstimator."""
+        if self.estimator is not None:
+            self.connected = True
+            return True
+        return False
+    
+    def is_connected(self) -> bool:
+        """Check if the estimator has a working camera."""
+        return self.connected and self.estimator is not None
+    
+    def set_filter(self, filter_type: FilterType):
+        """CNN implementation doesn't use additional filtering."""
+        self.logger.info("CNN implementation doesn't use additional filtering")
+        return True
+    
+    def calibrate(self) -> bool:
+        """Run CNN calibration with wrapper model."""
+        if not self.is_connected():
+            self.logger.error("Cannot calibrate: eye tracker not connected")
+            return False
+            
+        try:
+            self.logger.info("Starting CNN calibration to train wrapper model...")
+            
+            # Verify that estimator has necessary attributes
+            if not hasattr(self.estimator, 'wrapper_model'):
+                self.logger.error("Estimator has no 'wrapper_model' attribute")
+                return False
+                
+            success = run_9_point_calibration_cnn(self.estimator)
+            if success:
+                self.calibrated = True
+                self.logger.info("CNN calibration completed successfully")
+                return True
+            else:
+                self.logger.error("CNN calibration failed")
+                return False
+                
+        except Exception as e:
+            self.logger.error(f"Error during CNN calibration: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            return False
+    
+    def get_gaze_point(self) -> Optional[Tuple[Tuple[float, float], bool]]:
+        """Get the current gaze point coordinates and blink status."""
+        if not self.is_connected():
+            self.logger.debug("Eye tracker not connected")
+            return None
+        
+        try:
+            # Get frame directly from the estimator
+            frame = self.estimator.get_frame()
+            if frame is None:
+                self.logger.debug("Failed to get frame from camera")
+                return None
+            
+            # Extract features and check for blinks
+            features, is_blinking = self.estimator.extract_features(frame)
+            
+            if features is None:
+                return None
+            
+            # Predict screen coordinates using CNN with wrapper model adjustment
+            gaze_point = self.estimator.predict([features])[0]
+            self.logger.debug(f"Get gaze point: {gaze_point}")
+            
+            # Use raw values without additional smoothing
+            x, y = map(int, gaze_point)
+            
+            return ((x, y), is_blinking)
+            
+        except Exception as e:
+            self.logger.error(f"Error getting gaze data: {e}")
+            return None
+    
+    def save_model(self, path: str) -> bool:
+        """Save wrapper model if calibrated."""
+        if not self.calibrated:
+            self.logger.error("Cannot save model: not calibrated")
+            return False
+            
+        try:
+            # Save the wrapper model
+            if hasattr(self.estimator, "save_wrapper_model"):
+                success = self.estimator.save_wrapper_model(path)
+                if success:
+                    self.logger.info(f"Saved wrapper model to {path}")
+                    return True
+                else:
+                    self.logger.warning("Failed to save wrapper model")
+                    return False
+            else:
+                self.logger.warning("save_wrapper_model method not found in estimator")
+                return False
+        except Exception as e:
+            self.logger.error(f"Error saving wrapper model: {e}")
+            return False
+    
+    def load_model(self, path: str) -> bool:
+        """Load wrapper model."""
+        try:
+            if hasattr(self.estimator, "load_wrapper_model"):
+                success = self.estimator.load_wrapper_model(path)
+                if success:
+                    self.calibrated = True
+                    self.logger.info(f"Loaded wrapper model from {path}")
+                    return True
+                else:
+                    self.logger.warning("Failed to load wrapper model")
+                    return False
+            else:
+                self.logger.warning("load_wrapper_model method not found in estimator")
+                return False
+        except Exception as e:
+            self.logger.error(f"Error loading wrapper model: {e}")
+            return False
+    
+    def disconnect(self):
+        """Disconnect from the camera."""
+        if self.estimator is not None:
+            try:
+                self.estimator.release_camera()
+                self.connected = False
+                self.logger.info("Disconnected from camera")
+            except Exception as e:
+                self.logger.error(f"Error disconnecting from camera: {e}")
 
 class EyeTracker:
     def __init__(self):

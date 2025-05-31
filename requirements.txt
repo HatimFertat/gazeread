@@ -1,11 +1,25 @@
-dotenv==0.9.9
-mediapipe==0.10.21
-openai==1.82.0
-opencv-python==4.11.0.86
-pymupdf==1.26.0
-pyqt6==6.9.0
-scikit-learn==1.6.1
-scipy==1.13.1 ; python_full_version < '3.10'
-scipy==1.15.3 ; python_full_version >= '3.10'
-screeninfo==0.8.1
--e ./eyetrax
+# Core dependencies
+numpy>=1.19.0
+opencv-python>=4.5.0
+scipy>=1.6.0
+PyQt6>=6.0.0
+matplotlib>=3.3.0
+PyPDF2>=2.0.0
+
+# CNN model dependencies
+torch>=1.9.0
+torchvision>=0.10.0
+mediapipe>=0.8.9
+albumentations>=1.0.0
+pyyaml>=5.4.0
+
+# Eyetrax dependencies
+# Install with: pip install -e ./eyetrax
+# Or make sure the eyetrax package is in your Python path
+
+# General dependencies
+pdfminer.six
+typing-extensions
+python-dotenv
+screeninfo
+pytorch_lightning

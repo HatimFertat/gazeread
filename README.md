@@ -1,64 +1,119 @@
-# ReadGaze
+# ReadGaze - Eye Tracking for Reading
 
-An intelligent PDF reader that tracks your eye movements to enhance your reading experience. ReadGaze combines eye tracking technology with AI assistance to help you understand difficult passages and maintain optimal reading habits.
+An eye tracking application for reading assistance, with support for both traditional calibration-based gaze estimation and CNN-based gaze estimation.
 
 ## Features
 
-- Eye tracking integration for reading progress monitoring
-- PDF document viewing with large, readable text
-- Automatic scrolling based on eye position
-- AI-powered assistance for difficult passages
-- Reading time tracking and analysis
+- Track user's gaze in real-time using either:
+  - Traditional calibration-based approach
+  - CNN-based model (no calibration required)
+- Display reading content with visual aids
+- Apply various filters to gaze data for smoother tracking
+- Debug mode for troubleshooting
 
 ## Requirements
 
-- Python 3.9 or higher
-- Tobii Eye Tracker (compatible with tobii-research library)
-- OpenAI API key (for AI assistance)
+- Python 3.8+
+- Webcam
+- Dependencies listed in `requirements.txt`
 
 ## Installation
 
-1. Clone the repository:
-```bash
-git clone https://github.com/yourusername/readgaze.git
-cd readgaze
-```
-
-2. Create and activate a virtual environment:
-```bash
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-```
-
-3. Install dependencies:
-```bash
-pip install -e .
-```
-
-4. Create a `.env` file in the project root and add your OpenAI API key:
-```
-OPENAI_API_KEY=your_api_key_here
-```
+1. Clone the repository
+2. Install dependencies:
+   ```
+   pip install -r requirements.txt
+   ```
 
 ## Usage
 
-1. Connect your Tobii Eye Tracker
-2. Run the application:
-```bash
+### Basic Usage
+
+To run the application with the traditional calibration-based gaze tracking:
+
+```
 python -m readgaze
 ```
-3. Open a PDF file through the application interface
-4. Start reading - the application will track your progress and provide assistance when needed
 
-## Project Structure
+To run with the CNN-based gaze tracking (no calibration needed):
 
-- `readgaze/` - Main package directory
-  - `gui/` - GUI components and main window
-  - `eye_tracking/` - Eye tracking integration
-  - `pdf/` - PDF handling and text extraction
-  - `ai/` - AI assistance integration
-  - `utils/` - Utility functions and helpers
+```
+python -m readgaze --use-cnn
+```
+
+### Command Line Arguments
+
+- `--use-cnn`: Use the CNN model for gaze estimation (no calibration required)
+- `--model-path PATH`: Path to a custom CNN model checkpoint (default: cnn/p00.ckpt)
+- `--calibration-path PATH`: Path to a custom camera calibration file (default: cnn/calibration_matrix.yaml)
+- `--debug`: Enable debug logging for troubleshooting
+
+### Debug Mode
+
+To run with debug logging enabled:
+
+```
+python -m readgaze --debug
+```
+
+Or with CNN model and debug logging:
+
+```
+python -m readgaze --use-cnn --debug
+```
+
+## CNN Gaze Estimation
+
+ReadGaze now supports a CNN-based gaze estimation approach that doesn't require calibration. This alternative approach uses a deep learning model to predict gaze direction based on facial landmarks.
+
+### Features
+- No calibration required - works immediately
+- Uses MediaPipe Face Mesh for reliable facial landmark detection
+- Predicts gaze direction using a pre-trained CNN model
+
+### Usage
+To use the CNN gaze estimator:
+
+```bash
+# Run with CNN gaze estimation
+python -m readgaze --use-cnn
+
+# Specify a custom model path
+python -m readgaze --use-cnn --model-path path/to/model.ckpt
+
+# Enable debug logging
+python -m readgaze --use-cnn --debug
+```
+
+### Technical Details
+- The CNN implementation uses MediaPipe Face Mesh for facial landmark detection
+- Pose estimation is performed using OpenCV's solvePnP with fallback methods
+- For best results, start by looking directly at the camera with your head facing forward
+
+## Testing
+
+To test the CNN gaze estimator directly:
+
+```
+python test_cnn_gaze.py
+```
+
+This will display a simple window showing:
+- Live webcam feed
+- Detected gaze point
+- FPS and processing times
+- Visual indicators of gaze movement
+
+## Troubleshooting
+
+If you encounter issues with the CNN model:
+
+1. Ensure the webcam is working correctly
+2. Try running with the `--debug` flag for more detailed logging
+3. Check lighting conditions - good, even lighting improves accuracy
+4. Position yourself within 50-80cm from the camera
+5. Ensure your face is fully visible to the camera
 
 ## License
 
-MIT License
+[MIT License](LICENSE)

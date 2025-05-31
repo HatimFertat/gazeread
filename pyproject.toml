@@ -5,13 +5,19 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
+    "albumentations>=2.0.8",
     "dotenv>=0.9.9",
     "mediapipe>=0.10.21",
     "openai>=1.82.0",
     "opencv-python>=4.11.0.86",
     "pymupdf>=1.26.0",
+    "pyobjc-framework-quartz>=11.0",
     "pyqt6>=6.9.0",
+    "pytorch-lightning>=2.5.1.post0",
+    "pyyaml>=6.0.2",
     "scikit-learn>=1.6.1",
     "scipy>=1.13.1",
     "screeninfo>=0.8.1",
+    "torch>=2.7.0",
+    "torchvision>=0.22.0",
 ]
