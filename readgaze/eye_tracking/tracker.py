@@ -10,7 +10,7 @@ from typing import Optional, Tuple, Literal, List, Dict, Any
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="eyetrax.filters.kde")
 
 from eyetrax.gaze import GazeEstimator, CNNGazeEstimator
-from eyetrax.calibration import run_9_point_calibration, run_9_point_calibration_cnn
+from eyetrax.calibration import run_9_point_calibration, run_9_point_calibration_cnn, run_16_point_calibration
 from eyetrax.filters import KalmanSmoother, KDESmoother, NoSmoother, make_kalman
 from eyetrax.utils.screen import get_screen_size
 
@@ -251,7 +251,7 @@ class EyeTracker:
             
         try:
             self.logger.info("Starting calibration...")
-            run_9_point_calibration(self.estimator)
+            run_16_point_calibration(self.estimator)
             self.calibrated = True
             self.logger.info("Calibration completed successfully")
             

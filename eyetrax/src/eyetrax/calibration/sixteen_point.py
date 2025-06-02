@@ -7,7 +7,7 @@ from eyetrax.calibration.common import (
     wait_for_face_and_countdown,
 )
 from eyetrax.utils.screen import get_screen_size
-
+import random
 
 def run_16_point_calibration(gaze_estimator, camera_index: int = 0):
     """
@@ -21,25 +21,11 @@ def run_16_point_calibration(gaze_estimator, camera_index: int = 0):
         cv2.destroyAllWindows()
         return
 
-    order = [
-        (1, 1),
-        (0, 0),
-        (2, 0),
-        (0, 2),
-        (2, 2),
-        (1, 0),
-        (0, 1),
-        (2, 1),
-        (1, 2),
-        (0, 3),
-        (2, 3),
-        (3, 0),
-        (3, 2),
-        (3, 1),
-    ]
+    order = [(row, col) for row in range(6) for col in range(3)]
+    random.shuffle(order)
     pts = compute_grid_points(order, sw, sh)
 
-    res = _pulse_and_capture(gaze_estimator, cap, pts, sw, sh)
+    res = _pulse_and_capture(gaze_estimator, cap, pts, sw, sh, 1, 0.5)
     cap.release()
     cv2.destroyAllWindows()
     if res is None:

@@ -1,6 +1,6 @@
-from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, 
+from PyQt6.QtWidgets import (QMainWindow, QWidget, QVBoxLayout, QApplication,
                              QScrollArea, QLabel, QPushButton, QFileDialog,
-                             QMessageBox, QHBoxLayout, QComboBox, QSpinBox)
+                             QMessageBox, QHBoxLayout, QComboBox, QSpinBox, QCheckBox, QSizePolicy)
 from PyQt6.QtCore import Qt, QTimer, QRect, QPoint, QSize
 from PyQt6.QtGui import QFont, QTextDocument, QPainter, QColor, QPen, QKeyEvent, QPixmap, QImage, QFontMetrics
 import os
@@ -15,6 +15,235 @@ import re
 from typing import Optional, Dict, Tuple, List
 
 #
+
+class StickyNote(QWidget):
+    """A sticky note widget that appears next to text content."""
+    
+    def __init__(self, text: str, parent=None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.WindowStaysOnTopHint | Qt.WindowType.Tool)
+
+        # Setup layout
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(12, 8, 12, 12)
+        layout.setSpacing(6)
+
+        # Minimize and Close buttons
+        self.minimize_btn = QPushButton("–")
+        self.minimize_btn.setFixedSize(24, 24)
+        self.minimize_btn.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(255, 215, 100, 180);
+                color: white;
+                border: none;
+                border-radius: 12px;
+                font-size: 16px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 185, 50, 200);
+            }
+        """)
+        self.minimize_btn.clicked.connect(self.handle_minimize)
+
+        close_btn = QPushButton("x")
+        close_btn.setFixedSize(24, 24)
+        close_btn.setStyleSheet("""
+            QPushButton {
+                background-color: rgba(255, 100, 100, 180);
+                color: white;
+                border: none;
+                border-radius: 12px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background-color: rgba(255, 50, 50, 200);
+            }
+        """)
+        close_btn.clicked.connect(self.handle_close)
+
+        # Minimize and close buttons in top-right
+        top_btn_layout = QHBoxLayout()
+        top_btn_layout.addStretch()
+        top_btn_layout.addWidget(self.minimize_btn)
+        top_btn_layout.addWidget(close_btn)
+        layout.addLayout(top_btn_layout)
+
+        # Text content - make it scrollable for long content
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+
+        self.text_label = QLabel(text)
+        self.text_label.setWordWrap(True)
+
+        # Fix for PyQt6 QSizePolicy
+        self.text_label.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+
+        self.text_label.setStyleSheet("""
+            QLabel {
+                background-color: rgba(255, 255, 150, 200);
+                color: #333;
+                padding: 12px;
+                border-radius: 8px;
+                font-size: 14px;
+                line-height: 1.4;
+                border: 2px solid rgba(200, 200, 100, 180);
+            }
+        """)
+
+        self.scroll_area.setWidget(self.text_label)
+        self.scroll_area.setStyleSheet("""
+            QScrollArea {
+                background-color: transparent;
+                border: none;
+            }
+        """)
+
+        layout.addWidget(self.scroll_area)
+
+        # Set the widget styling
+        self.setStyleSheet("""
+            QWidget {
+                background-color: rgba(255, 255, 150, 200);
+                border-radius: 10px;
+                border: 2px solid rgba(200, 200, 100, 180);
+            }
+        """)
+
+        # Auto-size based on content but with constraints
+        self.adjust_size_to_content()
+
+        # State for collapse/restore
+        self.collapsed = False
+        self.previous_size = None
+
+    def handle_minimize(self):
+        """Toggle collapse/restore of this sticky note window."""
+        if not self.collapsed:
+            # Collapse: store current size, hide content, shrink to header
+            self.previous_size = self.size()
+            self.scroll_area.hide()
+            # Adjust size to fit only the buttons row
+            self.adjustSize()
+            # Change button to restore icon
+            self.minimize_btn.setText("▢")
+            self.collapsed = True
+        else:
+            # Restore: show content and resize back
+            self.scroll_area.show()
+            if self.previous_size:
+                self.resize(self.previous_size)
+            # Change button back to minimize icon
+            self.minimize_btn.setText("–")
+            self.collapsed = False
+
+    def handle_close(self):
+        """Remove this note from main window list and delete it."""
+        # Find the main window that holds the sticky_notes list
+        main_window = None
+        for widget in QApplication.allWidgets():
+            if hasattr(widget, 'sticky_notes'):
+                main_window = widget
+                break
+        if main_window and self in main_window.sticky_notes:
+            main_window.sticky_notes.remove(self)
+        self.deleteLater()
+        
+        # Variables for dragging
+        self.dragging = False
+        self.drag_position = None
+        
+        # Store which page this note belongs to
+        self.page_number = None
+        self.relative_y_position = None
+        
+    def adjust_size_to_content(self):
+        """Adjust size based on text content with better sizing logic."""
+        # Calculate text size
+        font_metrics = self.text_label.fontMetrics()
+        text = self.text_label.text()
+        
+        # Calculate required width (with max constraint)
+        max_width = 300
+        min_width = 150
+        
+        # Calculate height needed for the text at max width
+        text_rect = font_metrics.boundingRect(
+            QRect(0, 0, max_width - 50, 0),  # Account for padding
+            Qt.TextFlag.TextWordWrap,
+            text
+        )
+        
+        # Set size with constraints
+        content_width = min(max_width, max(min_width, text_rect.width() + 50))
+        content_height = min(400, max(200, text_rect.height() + 100))  # Room for header and padding
+        
+        self.resize(content_width, content_height)
+        
+    def set_page_position(self, page_number: int, relative_y: float):
+        """Set which page this note belongs to and its relative position within that page."""
+        self.page_number = page_number
+        self.relative_y_position = relative_y
+        # Prepend title into the text content
+        original_text = self.text_label.text()
+        title_text = f"💡 AI Assistant (Page {page_number + 1})\n\n"
+        self.text_label.setText(title_text + original_text)
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.dragging = True
+            self.drag_position = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+            event.accept()
+        
+    def mouseMoveEvent(self, event):
+        if event.buttons() == Qt.MouseButton.LeftButton and self.dragging:
+            self.move(event.globalPosition().toPoint() - self.drag_position)
+            event.accept()
+        
+    def mouseReleaseEvent(self, event):
+        if self.dragging:
+            self.dragging = False
+            # Update the relative position based on the new location
+            self.update_relative_position()
+            event.accept()
+            
+    def update_relative_position(self):
+        """Update the relative position based on current note position."""
+        if self.page_number is None:
+            return
+            
+        # Get the parent main window to access page positions
+        # This is a bit of a hack, but we need access to the main window's page positions
+        main_window = None
+        for widget in QApplication.allWidgets():
+            if hasattr(widget, 'page_y_positions') and hasattr(widget, 'scroll_area'):
+                main_window = widget
+                break
+                
+        if not main_window or self.page_number >= len(main_window.page_y_positions):
+            return
+            
+        # Get current note position and page bounds
+        note_y = self.y()
+        scroll_area_top = main_window.scroll_area.mapToGlobal(QPoint(0, 0)).y()
+        current_scroll = main_window.scroll_area.verticalScrollBar().value()
+        
+        # Convert note position back to page coordinates
+        absolute_y_in_page = (note_y - scroll_area_top) + current_scroll
+        
+        # Get page bounds
+        page_y_start, page_y_end = main_window.page_y_positions[self.page_number]
+        page_height = page_y_end - page_y_start
+        
+        if page_height > 0:
+            # Calculate new relative position
+            new_relative_y = (absolute_y_in_page - page_y_start) / page_height
+            new_relative_y = max(0.0, min(1.0, new_relative_y))  # Clamp to [0, 1]
+            self.relative_y_position = new_relative_y
 
 class GazeIndicator(QWidget):
     def __init__(self, parent=None):
@@ -220,7 +449,7 @@ class GazeIndicator(QWidget):
                         block_bbox = QRect(left, top, right - left, bottom - top)
                         self.page_screen_bboxes[self.current_page].append(block_bbox)
                 
-                self.logger.info(f"Page {self.current_page}: Created {len(self.page_screen_bboxes[self.current_page])} block boxes from {len(blocks)} blocks")
+                # self.logger.info(f"Page {self.current_page}: Created {len(self.page_screen_bboxes[self.current_page])} block boxes from {len(blocks)} blocks")
             else:
                 # Fallback: If we don't have block mapping, use the PDF paragraph positions
                 if self.current_page in self.page_paragraph_positions:
@@ -254,7 +483,7 @@ class GazeIndicator(QWidget):
                                 block_bbox = QRect(left, top, right - left, bottom - top)
                                 self.page_screen_bboxes[self.current_page].append(block_bbox)
                         
-                        self.logger.info(f"Page {self.current_page}: Created {len(self.page_screen_bboxes[self.current_page])} block boxes from PDF blocks")
+                        # self.logger.info(f"Page {self.current_page}: Created {len(self.page_screen_bboxes[self.current_page])} block boxes from PDF blocks")
                 
                 # If we still don't have blocks, add a marker to be improved next time
                 if not self.page_screen_bboxes[self.current_page]:
@@ -304,14 +533,11 @@ class GazeIndicator(QWidget):
         
     def paintEvent(self, event):
         """Draw detected text boxes and gaze point."""
-        if not self.gaze_point:
-            return
-            
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
-        # Draw text boxes for current page
-        if self.current_page in self.page_screen_bboxes:
+        # Draw text boxes for current page (only if PDF is loaded)
+        if self.gaze_point and self.current_page in self.page_screen_bboxes:
             rect_pen = QPen()
             rect_pen.setWidth(2)
             
@@ -336,14 +562,15 @@ class GazeIndicator(QWidget):
                         QRect(bbox.x(), bbox.y(), 5, bbox.height()),
                         QColor(0, 100, 200, 50)  # Semi-transparent blue marker
                     )
-            
-        # Draw gaze point
-        pen = QPen()
-        pen.setWidth(10)
-        pen.setColor(QColor(255, 0, 0))
-        painter.setPen(pen)
-        x, y = self.gaze_point
-        painter.drawPoint(x, y)
+        
+        # Always draw gaze point if available
+        if self.gaze_point:
+            pen = QPen()
+            pen.setWidth(10)
+            pen.setColor(QColor(255, 0, 0))
+            painter.setPen(pen)
+            x, y = self.gaze_point
+            painter.drawPoint(x, y)
 
     def get_line_index_at_gaze(self) -> Optional[Tuple[int, int]]:
         """Return the (page_num, line_index) corresponding to the current gaze point."""
@@ -431,6 +658,26 @@ class MainWindow(QMainWindow):
         # Track page positions in the scrollable area
         self.page_y_positions = []  # List of (start_y, end_y) for each page
         
+        # Initialize AI assistant
+        try:
+            self.ai_assistant = AIAssistant()
+            self.logger.info(f"AI assistant initialized with models: {self.ai_assistant.get_available_model_names()}")
+        except Exception as e:
+            self.logger.warning(f"AI assistant initialization failed: {e}")
+            self.ai_assistant = None
+        
+        # Track sticky notes with page associations
+        self.sticky_notes = []
+        
+        # Eye-controlled scrolling variables
+        self.scroll_edge_threshold = 50  # Pixels from edge to trigger scrolling
+        self.scroll_speed = 5  # Scroll speed when eye is at edge
+        self.edge_scroll_timer = QTimer()
+        self.edge_scroll_timer.timeout.connect(self.handle_edge_scrolling)
+        self.edge_scroll_timer.start(50)  # Check every 50ms
+        self.gaze_at_top_edge = False
+        self.gaze_at_bottom_edge = False
+        
         # Try to load existing calibration
         self.load_calibration()
         self.logger.info("MainWindow initialized")
@@ -444,6 +691,11 @@ class MainWindow(QMainWindow):
         physical_size = screen.size()                    # QSize in device pixels, e.g. 2560×1600
         if hasattr(self, 'gaze_indicator'):
             self.gaze_indicator.setGeometry(self.centralWidget().rect())
+        
+        # Update sticky note positions when window is resized
+        if hasattr(self, 'sticky_notes'):
+            self.update_sticky_note_positions()
+            
         super().resizeEvent(event)
         
     def setup_ui(self):
@@ -497,6 +749,12 @@ class MainWindow(QMainWindow):
         self.granularity_combo.currentTextChanged.connect(self.change_granularity)
         toolbar_layout.addWidget(self.granularity_combo)
         
+        # Eye scrolling checkbox
+        self.eye_scroll_checkbox = QCheckBox("Eye Scrolling")
+        self.eye_scroll_checkbox.setChecked(False)  # Enabled by default
+        self.eye_scroll_checkbox.setToolTip("Enable automatic scrolling when gaze reaches screen edges")
+        toolbar_layout.addWidget(self.eye_scroll_checkbox)
+        
         # Enhanced page indicator
         self.page_indicator_widget = QWidget()
         page_indicator_layout = QHBoxLayout(self.page_indicator_widget)
@@ -518,13 +776,13 @@ class MainWindow(QMainWindow):
         toolbar_layout.addWidget(self.fullscreen_button)
         
         # Status label
-        self.status_label = QLabel("Eye tracker: Not connected")
+        self.status_label = QLabel("Eye tracker: Not connected | Press Space for AI sticky notes")
         toolbar_layout.addWidget(self.status_label)
         
         toolbar_layout.addStretch()
         layout.addWidget(self.toolbar)
         
-        # Content area - text display
+        # Content area - text display (full width)
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
@@ -539,9 +797,7 @@ class MainWindow(QMainWindow):
         self.page_labels = []
         
         self.scroll_area.setWidget(self.text_content_widget)
-        
-        # Add scroll area to main layout
-        layout.addWidget(self.scroll_area)
+        layout.addWidget(self.scroll_area)  # Full width for text content
         
         # Add gaze indicator to the central widget
         self.gaze_indicator = GazeIndicator(self.centralWidget())
@@ -558,28 +814,40 @@ class MainWindow(QMainWindow):
         if not self.is_fullscreen:
             # Store current window state
             self.normal_geometry = self.geometry()
-            # Hide toolbar and enter fullscreen
+            # Hide toolbar, enter fullscreen
             self.toolbar.hide()
             self.showFullScreen()
             self.is_fullscreen = True
-            self.status_label.setText("Press Enter to exit fullscreen")
+            self.status_label.setText("Press Enter to exit fullscreen | Press Space for AI sticky notes")
         else:
             # Exit fullscreen and restore toolbar
             self.showNormal()
             self.setGeometry(self.normal_geometry)
             self.toolbar.show()
             self.is_fullscreen = False
-            self.status_label.setText("Eye tracker: Connected")
+            # Update status based on eye tracker state
+            if hasattr(self.eye_tracker, 'is_connected') and self.eye_tracker.is_connected():
+                if hasattr(self.eye_tracker, 'calibrated') and self.eye_tracker.calibrated:
+                    self.status_label.setText("Eye tracker: Connected and calibrated | Space for AI sticky notes")
+                else:
+                    self.status_label.setText("Eye tracker: Connected (needs calibration) | Space for AI sticky notes")
+            else:
+                self.status_label.setText("Eye tracker: Not connected | Space for AI sticky notes")
             
     def keyPressEvent(self, event: QKeyEvent):
         """Handle keyboard events."""
         if event.key() == Qt.Key.Key_Return or event.key() == Qt.Key.Key_Enter:
             self.toggle_fullscreen()
         elif event.key() == Qt.Key.Key_Space:
-            # Page down on space
-            self.scroll_area.verticalScrollBar().setValue(
-                self.scroll_area.verticalScrollBar().value() + self.scroll_area.height() - 100
-            )
+            # Check for modifiers
+            if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
+                # Shift+Space: Page down (original behavior)
+                self.scroll_area.verticalScrollBar().setValue(
+                    self.scroll_area.verticalScrollBar().value() + self.scroll_area.height() - 100
+                )
+            else:
+                # Space: AI reading assistance
+                self.get_ai_reading_assistance()
         elif event.key() == Qt.Key.Key_Backspace:
             # Page up on backspace
             self.scroll_area.verticalScrollBar().setValue(
@@ -697,6 +965,11 @@ class MainWindow(QMainWindow):
         
         if file_name:
             try:
+                # Clean up existing sticky notes when loading new PDF
+                for note in self.sticky_notes:
+                    note.close()
+                self.sticky_notes.clear()
+                
                 self.pdf_document = PDFDocument(file_name)
                 self.current_page = 0
                 
@@ -789,6 +1062,12 @@ class MainWindow(QMainWindow):
         
         # Calculate page positions in the scroll area
         self.calculate_page_positions()
+        # Ensure bounding boxes are drawn for the first page on initial load
+        self.gaze_indicator.set_current_page(0)
+        # Ensure text_label is set to first page before updating bboxes
+        if self.page_labels:
+            self.gaze_indicator.set_text_label(self.page_labels[0])
+        self.gaze_indicator.update_bboxes()
         
     def calculate_page_positions(self):
         """Calculate the Y positions of each page in the scroll area."""
@@ -859,28 +1138,57 @@ class MainWindow(QMainWindow):
             self.gaze_indicator.set_text_label(self.page_labels[most_visible_page])
             self.gaze_indicator.update_bboxes()
         
+        # Update sticky note positions when scrolling
+        self.update_sticky_note_positions()
+        
     def update_eye_position(self):
         """Update eye position and detect which line is being read."""
-        if not (self.eye_tracker.is_connected() and self.pdf_document):
+        if not self.eye_tracker.is_connected():
             return
             
         gaze_data = self.eye_tracker.get_gaze_point()
         if not gaze_data:
             self.logger.debug("No gaze data received")
             self._reset_line_tracking()
+            self.gaze_at_top_edge = False
+            self.gaze_at_bottom_edge = False
             return
 
         gaze_point, is_blinking = gaze_data
         self.logger.debug(f"Gaze point: {gaze_point}, Blinking: {is_blinking}")
         
-        # If blinking, reset line tracking
+        # If blinking, reset line tracking and edge detection
         if is_blinking:
             self.logger.debug("Blink detected")
-            self._reset_line_tracking()
+            if self.pdf_document:  # Only reset line tracking if PDF is loaded
+                self._reset_line_tracking()
+            self.gaze_at_top_edge = False
+            self.gaze_at_bottom_edge = False
             return
 
-        # Update gaze indicator with absolute screen coordinates
+        # Always update gaze indicator with absolute screen coordinates
         self.gaze_indicator.set_gaze_point(gaze_point[0], gaze_point[1])
+        
+        # Only do PDF-related processing if document is loaded
+        if not self.pdf_document:
+            return
+        
+        # Check for edge scrolling conditions (only if enabled)
+        if self.eye_scroll_checkbox.isChecked():
+            screen_height = self.screen().geometry().height()
+            if gaze_point[1] <= self.scroll_edge_threshold:
+                self.gaze_at_top_edge = True
+                self.gaze_at_bottom_edge = False
+            elif gaze_point[1] >= screen_height - self.scroll_edge_threshold:
+                self.gaze_at_bottom_edge = True
+                self.gaze_at_top_edge = False
+            else:
+                self.gaze_at_top_edge = False
+                self.gaze_at_bottom_edge = False
+        else:
+            # Eye scrolling disabled
+            self.gaze_at_top_edge = False
+            self.gaze_at_bottom_edge = False
         
         # Determine and handle line change based on gaze
         line_info = self.gaze_indicator.get_line_text_at_gaze()
@@ -930,31 +1238,151 @@ class MainWindow(QMainWindow):
                 self.current_line = None
                 self.current_line_page = None
         
-    def show_explanation(self):
-        """Show AI explanation for the current line."""
-        if not self.current_line or not self.pdf_document or self.current_line_page is None:
+    def get_ai_reading_assistance(self):
+        """Get AI assistance for current reading session based on line times and patterns."""
+        if not self.pdf_document:
+            self.logger.warning("No PDF document loaded for AI assistance")
             return
             
-        context_lines = self.pdf_document.get_context_lines(self.current_line_page, self.current_line)
-        # Extract just the text from the (page, text) tuples
-        context_text = [text for _, text in context_lines]
+        if not self.ai_assistant:
+            self.logger.warning("AI assistant not available. Please check your API keys in .env file.")
+            return
         
-        # Get accumulated reading time for this line
-        line_time = self.page_line_times.get(self.current_line_page, {}).get(self.current_line, 0)
-        
-        explanation = self.ai_assistant.get_explanation(
-            self.current_line,
-            context_text,
-            line_time
-        )
-        
-        self.explanation_label.setText(explanation)
-        self.explanation_label.show()
+        try:
+            # Get AI reading assistance based on page line times
+            assistance = self.ai_assistant.get_reading_assistance(
+                page_line_times=self.page_line_times,
+                current_page=self.current_page,
+                pdf_document=self.pdf_document,
+                max_lines=5
+            )
+            
+            # Add to conversation history for better context in future calls
+            current_context = {
+                'page': self.current_page,
+                'lines_analyzed': len([line for lines in self.page_line_times.values() for line in lines.keys()]),
+                'assistance': assistance[:100] + '...' if len(assistance) > 100 else assistance
+            }
+            self.ai_assistant.add_to_history(current_context)
+            
+            # Create a sticky note anchored to the current position on the current page
+            self.create_sticky_note(assistance)
+            
+            # Log the assistance request for debugging
+            self.logger.info(f"AI reading assistance provided for page {self.current_page + 1}, reading data cleared")
+            
+        except Exception as e:
+            error_msg = f"Sorry, I couldn't generate reading assistance: {str(e)}"
+            self.logger.error(f"Error getting AI reading assistance: {e}")
+            # Create a sticky note with the error message
+            self.create_sticky_note(error_msg)
+    
+    def create_sticky_note(self, text: str):
+        """Create a sticky note anchored to the current position on the current page."""
+        page_label = self.page_labels[self.current_page]
+        note = StickyNote(text, parent=page_label)
+
+        # Calculate the relative position within the current page
+        scroll_value = self.scroll_area.verticalScrollBar().value()
+        viewport_height = self.scroll_area.viewport().height()
+
+        # Get the current page's position in the scroll area
+        if self.current_page < len(self.page_y_positions):
+            page_y_start, page_y_end = self.page_y_positions[self.current_page]
+            page_height = page_y_end - page_y_start
+
+            if page_height > 0:
+                # Calculate where in the page we currently are based on the center of the viewport
+                viewport_center = scroll_value + viewport_height / 2
+
+                # Clamp the viewport center to be within the page bounds
+                viewport_center_in_page = max(page_y_start, min(viewport_center, page_y_end))
+
+                # Calculate relative position (0.0 to 1.0) within the page
+                relative_y = (viewport_center_in_page - page_y_start) / page_height
+
+                # Adjust to place the note in the upper portion of the visible area
+                relative_y = max(0.1, min(0.9, relative_y - 0.2))  # Offset upward slightly
+            else:
+                relative_y = 0.3  # Default fallback
+        else:
+            relative_y = 0.3  # Default fallback
+
+        note.set_page_position(self.current_page, relative_y)
+        self.sticky_notes.append(note)
+        self.position_sticky_note(note)
+        note.show()
+        note.raise_()
+        self.logger.info(f"Created sticky note for page {self.current_page + 1} at relative position {relative_y:.2f}")
+    
+    def position_sticky_note(self, note):
+        if note.page_number is None or note.relative_y_position is None:
+            return
+
+        page_label = self.page_labels[note.page_number]
+        current_scroll = self.scroll_area.verticalScrollBar().value()
+        viewport_height = self.scroll_area.viewport().height()
+        page_y_start, page_y_end = self.page_y_positions[note.page_number]
+
+        if page_y_end < current_scroll or page_y_start > current_scroll + viewport_height:
+            note.hide()
+            return
+        else:
+            note.show()
+
+        label_height = page_label.height()
+        note_height = note.height()
+        note_width = note.width()
+
+        y_in_label = int(note.relative_y_position * (label_height - note_height))
+        x_in_label = max(10, page_label.width() - note_width - 20)
+
+        note.move(x_in_label, y_in_label)
+    
+    def update_sticky_note_positions(self):
+        current_scroll = self.scroll_area.verticalScrollBar().value()
+        viewport_height = self.scroll_area.viewport().height()
+        for note in self.sticky_notes:
+            if note.page_number is None:
+                continue
+            page_y_start, page_y_end = self.page_y_positions[note.page_number]
+            if page_y_end < current_scroll or page_y_start > current_scroll + viewport_height:
+                note.hide()
+            else:
+                note.show()
+    
+    def cleanup_sticky_notes(self):
+        """Remove sticky notes that have been closed."""
+        self.sticky_notes = [note for note in self.sticky_notes if note.isVisible()]
         
     def closeEvent(self, event):
         """Clean up resources when closing the application."""
+        # Close all sticky notes
+        for note in self.sticky_notes:
+            note.close()
+        self.sticky_notes.clear()
+        
         if self.eye_tracker:
             self.eye_tracker.disconnect()
         if self.pdf_document:
             self.pdf_document.close()
         event.accept() 
+
+    def handle_edge_scrolling(self):
+        """Handle edge scrolling based on gaze position."""
+        if not (self.pdf_document and hasattr(self, 'gaze_at_top_edge') and self.eye_scroll_checkbox.isChecked()):
+            return
+
+        # Only scroll if gaze is actually at the edge
+        if self.gaze_at_top_edge:
+            current_value = self.scroll_area.verticalScrollBar().value()
+            if current_value > 0:  # Don't scroll past the top
+                self.scroll_area.verticalScrollBar().setValue(current_value - self.scroll_speed)
+                self.logger.debug("Auto-scrolling up due to gaze at top edge")
+                
+        elif self.gaze_at_bottom_edge:
+            current_value = self.scroll_area.verticalScrollBar().value()
+            max_value = self.scroll_area.verticalScrollBar().maximum()
+            if current_value < max_value:  # Don't scroll past the bottom
+                self.scroll_area.verticalScrollBar().setValue(current_value + self.scroll_speed)
+                self.logger.debug("Auto-scrolling down due to gaze at bottom edge") 
